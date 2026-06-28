@@ -259,3 +259,33 @@ def register(mcp, get_program):
                         "call_site": str(instr.getAddress()),
                     })
         return results
+
+    @mcp.tool()
+    def search_strings(query: str, max_results: int = 100) -> str:
+        """
+        Search for defined string data in the program whose value contains `query` (case-insensitive).
+        Returns up to `max_results` matches as 'address: value' lines.
+        Pass query='' to list all defined strings (up to max_results).
+        """
+        from ghidra.program.util import DefinedDataIterator
+
+        program = get_program()
+        needle = query.lower()
+        results = []
+
+        for data in DefinedDataIterator.definedStrings(program):
+            try:
+                value = data.getValue()
+                if not isinstance(value, str):
+                    value = str(value)
+                if needle in value.lower():
+                    addr = data.getAddress()
+                    results.append(f"{addr}: {value!r}")
+                    if len(results) >= max_results:
+                        break
+            except Exception:
+                continue
+
+        if not results:
+            return f"[no strings found matching {query!r}]"
+        return "\n".join(results)
