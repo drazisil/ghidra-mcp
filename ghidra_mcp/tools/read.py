@@ -267,14 +267,17 @@ def register(mcp, get_program):
         Returns up to `max_results` matches as 'address: value' lines.
         Pass query='' to list all defined strings (up to max_results).
         """
-        from ghidra.program.util import DefinedDataIterator
-
         program = get_program()
         needle = query.lower()
         results = []
 
-        for data in DefinedDataIterator.definedStrings(program):
+        listing = program.getListing()
+        data_iter = listing.getDefinedData(True)
+
+        for data in data_iter:
             try:
+                if not data.hasStringValue():
+                    continue
                 value = data.getValue()
                 if not isinstance(value, str):
                     value = str(value)
