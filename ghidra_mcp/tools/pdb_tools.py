@@ -17,6 +17,19 @@ with no cross-phase shared state required. All classes involved are public API.
 
 Only handles PDB 7.0 (RSDS signature). The older PDB 2.0 (NB10 signature,
 VC6-era) format is out of scope for this loader.
+
+IMPORTANT -- transient empty-looking function manager: the real LoadPdbTask
+schedules follow-up analysis (an entry-point pass and a demangler pass) after
+applying a PDB, specifically because PDB data can leave the program needing
+reconciliation. applyNoAnalysisState() does not do that scheduling. Observed
+directly against a real, previously-analyzed project (not the fresh-import
+test case, where this didn't show up): immediately after load_pdb returns,
+list_functions/decompile_function can report zero functions / "no function
+at <addr>" even though the apply genuinely succeeded and nothing was lost --
+re-running a normal analysis pass (GUI Analysis > Auto Analyze, or a scripted
+analyzeAll()) on the program afterward reconciles it and the function list
+(now with PDB-derived names) reappears. Don't mistake this transient state
+for data loss; the project's saved/versioned state is not corrupted by it.
 """
 from __future__ import annotations
 
