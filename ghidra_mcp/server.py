@@ -152,12 +152,13 @@ mcp = FastMCP(
     port=_mcp_port,
 )
 
-from ghidra_mcp.tools import read, write, vc6_fixes  # noqa: E402
+from ghidra_mcp.tools import read, write, vc6_fixes, pdb_tools  # noqa: E402
 
 read.register(mcp, get_program)
 if not _READ_ONLY:
     write.register(mcp, get_program, get_project)
     vc6_fixes.register(mcp, get_program, get_project)
+    pdb_tools.register(mcp, get_program, get_project)
 
 
 @mcp.tool()

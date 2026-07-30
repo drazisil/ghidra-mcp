@@ -153,3 +153,91 @@ def register(mcp, get_program, get_project):
             project.save(program)
             return f"Created struct {name} ({size} bytes) in {category}"
         return "[create_struct failed]"
+
+    @mcp.tool()
+    def set_calling_convention(name_or_address: str, convention: str) -> str:
+        """
+        Set a function's calling convention (e.g. '__cdecl', '__stdcall', '__thiscall', '__fastcall').
+        Valid names are defined by the program's compiler spec; on failure the error lists
+        the actual valid names for this program rather than a generic guess.
+        Useful for functions Ghidra decompiles with 'unaff_' registers because it guessed the
+        wrong convention (e.g. a function that really expects a caller-supplied register input).
+        """
+        from ghidra_mcp.util import resolve_function
+
+        program = get_program()
+        project = get_project()
+        fn = resolve_function(program, name_or_address)
+        old = fn.getCallingConventionName()
+
+        tx = program.startTransaction(f"set calling convention {fn.getName()} -> {convention}")
+        success = False
+        error = None
+        try:
+            fn.setCallingConvention(convention)
+            success = True
+        except Exception as e:
+            error = str(e)
+        finally:
+            program.endTransaction(tx, success)
+
+        if success:
+            project.save(program)
+            return f"{fn.getName()} @ {fn.getEntryPoint()}: calling convention {old!r} -> {convention!r}"
+
+        compiler_spec = program.getCompilerSpec()
+        valid = ", ".join(str(m.getName()) for m in compiler_spec.getCallingConventions())
+        raise ValueError(
+            f"Cannot set calling convention {convention!r} on {fn.getName()}: {error}. "
+            f"Valid conventions for this program: {valid}"
+        )
+
+    @mcp.tool()
+    def set_function_signature(name_or_address: str, signature: str) -> str:
+        """
+        Set a function's return type, name, and parameters from a C-style declaration string
+        (no calling-convention keyword — the parser rejects '__cdecl'/'__stdcall'/etc. in either
+        position with 'Can't resolve return type'; use set_calling_convention for that separately).
+        Example: set_function_signature('0055e190', 'int GameSetup_Init(int argc, char **argv)')
+        The name in the string may differ from the function's current name; the function is renamed
+        to match.
+        """
+        from ghidra.app.util.parser import FunctionSignatureParser
+        from ghidra.app.cmd.function import ApplyFunctionSignatureCmd
+        from ghidra.program.model.symbol import SourceType
+        from ghidra.util.task import ConsoleTaskMonitor
+        from ghidra_mcp.util import resolve_function
+
+        program = get_program()
+        project = get_project()
+        fn = resolve_function(program, name_or_address)
+        dtm = program.getDataTypeManager()
+
+        parser = FunctionSignatureParser(dtm, None)
+        try:
+            new_sig = parser.parse(fn.getSignature(), signature)
+        except Exception as e:
+            raise ValueError(f"Could not parse signature {signature!r}: {e}")
+
+        # preserveCallingConvention=True (this tool never parses one out of the string;
+        # use set_calling_convention for that), forceSetName=True (the 3-arg constructor
+        # defaults to FunctionRenameOption.RENAME_IF_DEFAULT, silently skipping the rename
+        # whenever the function already has a non-default name -- verified against a real
+        # COFF-sourced symbol, not a FUN_ placeholder. Force it so the rename this tool
+        # documents actually happens.)
+        cmd = ApplyFunctionSignatureCmd(
+            fn.getEntryPoint(), new_sig, SourceType.USER_DEFINED, True, True
+        )
+        monitor = ConsoleTaskMonitor()
+
+        tx = program.startTransaction(f"set signature {fn.getName()}")
+        success = False
+        try:
+            success = cmd.applyTo(program, monitor)
+        finally:
+            program.endTransaction(tx, success)
+
+        if success:
+            project.save(program)
+            return f"Signature applied at {fn.getEntryPoint()}: {signature}"
+        return f"[set_function_signature failed] {cmd.getStatusMsg()}"

@@ -17,3 +17,15 @@ include = ["ghidra_mcp*"]
 
 [tool.uv.sources]
 pyghidra = { path = "../../../home/drazisil/ghidra_12.1.2_PUBLIC/Ghidra/Features/PyGhidra/pypkg" }
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-m 'not slow'"
+markers = [
+    "slow: real end-to-end tests against large binaries (full analysis, PDB fetch)",
+]
