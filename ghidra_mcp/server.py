@@ -22,7 +22,7 @@ import atexit
 # ── Bootstrap PyGhidra before any Ghidra imports ────────────────────────────
 ghidra_install = os.environ.get(
     "GHIDRA_INSTALL_DIR",
-    "/home/drazisil/ghidra_12.0.3_PUBLIC",
+    "/home/drazisil/ghidra_12.1.2_PUBLIC",
 )
 os.environ.setdefault("GHIDRA_INSTALL_DIR", ghidra_install)
 
@@ -59,9 +59,9 @@ if _PROJECT_NAME:
 
 
 def _cleanup():
-    for proj in _open_projects.values():
+    if _project is not None:
         try:
-            proj.close()
+            _project.close()
         except Exception:
             pass
 
@@ -70,7 +70,7 @@ atexit.register(_cleanup)
 
 
 _open_programs: dict[str, object] = ({_PROGRAM_NAME: _program} if _PROGRAM_NAME and _program else {})
-_open_projects: dict[str, object] = ({_PROJECT_NAME: _project} if _PROJECT_NAME and _project else {})
+_project_name: str | None = _PROJECT_NAME if _PROJECT_NAME and _project else None
 
 
 def get_program():
@@ -95,19 +95,35 @@ def switch_program(name: str) -> str:
     return f"Opened and switched to: {name}"
 
 
-def switch_project(name: str) -> str:
-    """Open (or reuse) a project by name and make it the active project."""
-    global _project, _program, _open_programs
-    if name in _open_projects:
-        _project = _open_projects[name]
-        _open_programs.clear()
-        _program = None
-        return f"Switched to already-open project: {name}"
-    opened = GhidraProject.openProject(_PROJECT_PATH, name, _READ_ONLY)
-    _open_projects[name] = opened
-    _project = opened
-    _open_programs.clear()
+def _close_active_project() -> None:
+    """Release the current project's lock (if any) before opening a different one."""
+    global _project, _program, _project_name, _open_programs
+    if _project is not None:
+        try:
+            _project.close()
+        except Exception:
+            pass
+    _project = None
     _program = None
+    _project_name = None
+    _open_programs.clear()
+
+
+def switch_project(name: str) -> str:
+    """Open a project by name and make it the active project.
+
+    Closes the previously active project first so its lock file is
+    released — Ghidra projects are exclusive-locked while open, so without
+    this a long-running server would accumulate locks on every project it
+    ever switched away from, blocking the Ghidra GUI (or another process)
+    from opening them.
+    """
+    global _project, _project_name
+    if name == _project_name and _project is not None:
+        return f"Already on project: {name}"
+    _close_active_project()
+    _project = GhidraProject.openProject(_PROJECT_PATH, name, _READ_ONLY)
+    _project_name = name
     return f"Opened and switched to project: {name}"
 
 
@@ -214,13 +230,12 @@ def create_project(project_name: str) -> str:
     Create a new Ghidra project in the same directory as the current project and switch to it.
     Pass the new project name (e.g. 'cleanroom'). The project must not already exist.
     After creation it becomes the active project with no programs loaded.
+    Closes the previously active project first (see switch_project).
     """
-    global _project, _program, _open_programs
-    created = GhidraProject.createProject(_PROJECT_PATH, project_name, False)
-    _open_projects[project_name] = created
-    _project = created
-    _open_programs.clear()
-    _program = None
+    global _project, _project_name
+    _close_active_project()
+    _project = GhidraProject.createProject(_PROJECT_PATH, project_name, False)
+    _project_name = project_name
     return f"Created and switched to new project: {project_name}"
 
 

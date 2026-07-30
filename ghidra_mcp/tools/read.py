@@ -261,6 +261,93 @@ def register(mcp, get_program):
         return results
 
     @mcp.tool()
+    def find_field_dispatch_callers(
+        offsets: str,
+        start: str = "",
+        end: str = "",
+        timeout: int = 20,
+    ) -> str:
+        """
+        Bulk-scan decompiled function bodies for indirect calls dispatched through
+        a cached struct-field offset.
+
+        Use this when a singleton/interface object's vtable-dispatched methods are
+        invisible to get_references_to (indirect/vtable calls have no resolvable
+        xref) but you know some *other* class caches a pointer to that singleton
+        into one of its own fields at a known byte offset. This scans every
+        function in the given address range and reports any whose decompiled C
+        text contains BOTH an indirect-call expression (the
+        "(**(code **)(...))(...)" shape the decompiler renders for vtable calls)
+        AND a reference to one of the given offsets -- i.e. candidate call sites
+        where that cached field gets read back and dispatched through.
+
+        offsets: comma-separated hex/decimal field offsets, e.g. "0x36,0x1b6,0xed"
+        start/end: optional hex address bounds (e.g. "004e0000"/"00500000") to
+        limit the scan -- strongly recommended, since decompiling every function
+        in the whole program is slow. Leave blank to scan everything.
+        timeout: per-function decompile timeout in seconds.
+
+        Returns one line per match: address, function name, matched offsets.
+        This is a heuristic (text-pattern match on decompiled output, not real
+        data-flow analysis) -- verify each match with decompile_function.
+        """
+        import re
+        from ghidra.app.decompiler import DecompInterface
+        from ghidra.util.task import ConsoleTaskMonitor
+
+        def parse_offset(s: str) -> int:
+            s = s.strip()
+            return int(s, 16) if s.lower().startswith("0x") else int(s)
+
+        offset_list = [parse_offset(o) for o in offsets.split(",") if o.strip()]
+        offset_patterns = [(o, re.compile(r"(?<![0-9a-fA-Fx])0x%x\b" % o)) for o in offset_list]
+        indirect_call_pattern = re.compile(r"\(\*\*\(code \*\*\)")
+
+        program = get_program()
+        func_mgr = program.getFunctionManager()
+        addr_fact = program.getAddressFactory()
+
+        start_addr = addr_fact.getAddress(start) if start else None
+        end_addr = addr_fact.getAddress(end) if end else None
+
+        ifc = DecompInterface()
+        ifc.openProgram(program)
+        monitor = ConsoleTaskMonitor()
+
+        matches = []
+        total = 0
+        try:
+            for fn in func_mgr.getFunctions(True):
+                entry = fn.getEntryPoint()
+                if start_addr is not None and entry.compareTo(start_addr) < 0:
+                    continue
+                if end_addr is not None and entry.compareTo(end_addr) > 0:
+                    continue
+                total += 1
+                try:
+                    result = ifc.decompileFunction(fn, timeout, monitor)
+                except Exception:
+                    continue
+                if not result.decompileCompleted():
+                    continue
+                c_src = result.getDecompiledFunction().getC()
+                if not indirect_call_pattern.search(c_src):
+                    continue
+                hit_offsets = [o for o, pat in offset_patterns if pat.search(c_src)]
+                if hit_offsets:
+                    matches.append((str(entry), fn.getName(), [hex(h) for h in hit_offsets]))
+        finally:
+            ifc.closeProgram()
+
+        header = f"Scanned {total} functions."
+        if not matches:
+            return f"{header} No matches found."
+        lines = [header, f"Found {len(matches)} candidate matches:"]
+        for addr, name, hits in matches:
+            lines.append(f"  {addr}  {name}  offsets={hits}")
+        return "\n".join(lines)
+
+    @mcp.tool()
     def search_strings(query: str, max_results: int = 100) -> str:
         """
         Search for defined string data in the program whose value contains `query` (case-insensitive).

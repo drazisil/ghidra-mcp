@@ -16,4 +16,4 @@ where = ["."]
 include = ["ghidra_mcp*"]
 
 [tool.uv.sources]
-pyghidra = { path = "../../../home/drazisil/ghidra_12.0.3_PUBLIC/Ghidra/Features/PyGhidra/pypkg" }
+pyghidra = { path = "../../../home/drazisil/ghidra_12.1.2_PUBLIC/Ghidra/Features/PyGhidra/pypkg" }

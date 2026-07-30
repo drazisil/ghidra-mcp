@@ -8,7 +8,7 @@ Supports two transport modes:
 
 ## Requirements
 
-- Ghidra 11+ (tested on 12.0.3)
+- Ghidra 11+ (tested on 12.1.2)
 - Python 3.11+
 - [uv](https://docs.astral.sh/uv/)
 
@@ -37,7 +37,7 @@ All configuration is via environment variables:
 
 | Variable | Default | Description |
 |---|---|---|
-| `GHIDRA_INSTALL_DIR` | `/home/drazisil/ghidra_12.0.3_PUBLIC` | Path to Ghidra installation |
+| `GHIDRA_INSTALL_DIR` | `/home/drazisil/ghidra_12.1.2_PUBLIC` | Path to Ghidra installation |
 | `GHIDRA_PROJECT_PATH` | `/data/Code` | Directory containing the `.gpr` project file |
 | `GHIDRA_PROJECT_NAME` | `yoink32` | Project name (no extension) |
 | `GHIDRA_PROGRAM_NAME` | `MCity_d.exe` | Program filename inside the project |

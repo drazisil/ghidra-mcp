@@ -204,7 +204,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "mcp", specifier = ">=1.26" },
-    { name = "pyghidra", directory = "../../../home/drazisil/ghidra_12.0.3_PUBLIC/Ghidra/Features/PyGhidra/pypkg" },
+    { name = "pyghidra", directory = "../../../home/drazisil/ghidra_12.1.2_PUBLIC/Ghidra/Features/PyGhidra/pypkg" },
 ]
 
 [[package]]
@@ -494,7 +494,7 @@ wheels = [
 
 [[package]]
 name = "pyghidra"
-source = { directory = "../../../home/drazisil/ghidra_12.0.3_PUBLIC/Ghidra/Features/PyGhidra/pypkg" }
+source = { directory = "../../../home/drazisil/ghidra_12.1.2_PUBLIC/Ghidra/Features/PyGhidra/pypkg" }
 dependencies = [
     { name = "jpype1" },
     { name = "packaging" },
