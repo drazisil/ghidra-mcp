@@ -10,9 +10,13 @@ from __future__ import annotations
 
 import os
 
-os.environ.setdefault("GHIDRA_INSTALL_DIR", "/home/drazisil/ghidra_12.1.2_PUBLIC")
-
 import pytest
+
+if "GHIDRA_INSTALL_DIR" not in os.environ:
+    pytest.skip(
+        "GHIDRA_INSTALL_DIR not set; export it to point at your local Ghidra install to run these tests",
+        allow_module_level=True,
+    )
 
 FIXTURES_DIR = os.path.join(os.path.dirname(__file__), "fixtures")
 

@@ -18,18 +18,13 @@ Supports two transport modes:
 git clone https://github.com/drazisil/ghidra-mcp
 cd ghidra-mcp
 uv venv
-uv add /path/to/ghidra/Ghidra/Features/PyGhidra/pypkg
 uv sync
+uv pip install "$GHIDRA_INSTALL_DIR/Ghidra/Features/PyGhidra/pypkg"
 ```
 
-The `pyghidra` package is bundled with Ghidra — substitute your actual Ghidra installation path. This also installs `jpype1` automatically.
+The `pyghidra` package is bundled with Ghidra, at a path that's different on every machine, so it's deliberately *not* a declared project dependency — it's installed imperatively via `uv pip install` (uv's pip-compatible interface, which installs into the venv without touching `pyproject.toml`/`uv.lock`) rather than `uv add`. This also installs `jpype1` automatically, since `pyghidra`'s own package metadata declares it.
 
-You also need to update `pyproject.toml` to point `pyghidra` at your local Ghidra:
-
-```toml
-[tool.uv.sources]
-pyghidra = { path = "/path/to/ghidra/Ghidra/Features/PyGhidra/pypkg" }
-```
+**Important:** because `pyghidra` isn't in the lockfile, a plain `uv sync` will uninstall it again (it removes anything not declared). Use `uv sync --inexact` for any sync after the initial setup, or just re-run the `uv pip install` line above afterward.
 
 ## Configuration
 
@@ -37,10 +32,10 @@ All configuration is via environment variables:
 
 | Variable | Default | Description |
 |---|---|---|
-| `GHIDRA_INSTALL_DIR` | `/home/drazisil/ghidra_12.1.2_PUBLIC` | Path to Ghidra installation |
-| `GHIDRA_PROJECT_PATH` | `/data/Code` | Directory containing the `.gpr` project file |
-| `GHIDRA_PROJECT_NAME` | `yoink32` | Project name (no extension) |
-| `GHIDRA_PROGRAM_NAME` | `MCity_d.exe` | Program filename inside the project |
+| `GHIDRA_INSTALL_DIR` | *(required, no default)* | Path to Ghidra installation, e.g. `/opt/ghidra_12.1.2_PUBLIC` |
+| `GHIDRA_PROJECT_PATH` | current working directory | Directory containing the `.gpr` project file |
+| `GHIDRA_PROJECT_NAME` | *(unset — startup project-open is optional)* | Project name to open at startup (no extension), e.g. `myproject` |
+| `GHIDRA_PROGRAM_NAME` | *(unset — startup program-open is optional)* | Program filename to open at startup, e.g. `target.exe` |
 | `GHIDRA_READ_ONLY` | `0` | Set to `1` to open read-only (coexists with Ghidra GUI; write tools unavailable) |
 | `MCP_TRANSPORT` | `stdio` | Transport: `stdio` or `streamable-http` |
 | `MCP_HOST` | `127.0.0.1` | Bind host (streamable-http only) |
