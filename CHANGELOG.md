@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.2
+
+- Added `analyze_existing_program(name)`: runs auto-analysis on a program already present in the active project (e.g. a prior `import_and_analyze` call that completed the import+save but was interrupted — OOM-killed, in the real case that motivated this — before analysis itself finished), without re-importing it. Re-running `import_and_analyze` on an already-present filename fails with `ghidra.util.exception.FileInUseException`, even when nothing is actually still holding the file open — this opens the existing `DomainFile` via the same mechanism `switch_active_program` already uses instead of re-importing.
+- New `unanalyzed_small_program` fixture in `tests/conftest.py` (imports+saves the existing `xtoa.obj` fixture without running analysis) and `tests/test_analyze_existing_program.py`, 3 tests.
+
 ## 0.1.1
 
 - Fixed `GHIDRA_INSTALL_DIR` default (in both `server.py`'s fallback and the README config table) to match the Ghidra install's new location under `~/opt/ghidra_12.1.2_PUBLIC` after the Fedora migration. The `pyghidra` source path in `pyproject.toml` was updated the same way, and the venv was rebuilt against it.

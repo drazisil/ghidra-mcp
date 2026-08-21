@@ -6,8 +6,10 @@ list_projects, switch_active_project, list_programs, and switch_active_program
 tools to set them at runtime.
 
 Configuration via environment variables:
-  GHIDRA_INSTALL_DIR    path to Ghidra installation
-  GHIDRA_PROJECT_PATH   directory containing .gpr projects (default: /data/Code)
+  GHIDRA_INSTALL_DIR    path to Ghidra installation (required, no default — every
+                        installation lives somewhere different)
+  GHIDRA_PROJECT_PATH   directory containing .gpr projects (default: current working
+                        directory)
   GHIDRA_PROJECT_NAME   (optional) project to open at startup
   GHIDRA_PROGRAM_NAME   (optional) program to open at startup, requires GHIDRA_PROJECT_NAME
   GHIDRA_READ_ONLY      set to 1 to open projects read-only (coexists with Ghidra GUI;
@@ -20,10 +22,12 @@ import sys
 import atexit
 
 # ── Bootstrap PyGhidra before any Ghidra imports ────────────────────────────
-ghidra_install = os.environ.get(
-    "GHIDRA_INSTALL_DIR",
-    "/home/drazisil/ghidra_12.1.2_PUBLIC",
-)
+ghidra_install = os.environ.get("GHIDRA_INSTALL_DIR")
+if not ghidra_install:
+    raise RuntimeError(
+        "GHIDRA_INSTALL_DIR is not set. Point it at your Ghidra installation, e.g. "
+        "GHIDRA_INSTALL_DIR=/path/to/ghidra_12.1.2_PUBLIC"
+    )
 os.environ.setdefault("GHIDRA_INSTALL_DIR", ghidra_install)
 
 import pyghidra
@@ -32,7 +36,7 @@ pyghidra.start()
 # ── Ghidra project open ──────────────────────────────────────────────────────
 from ghidra.base.project import GhidraProject  # noqa: E402
 
-_PROJECT_PATH = os.environ.get("GHIDRA_PROJECT_PATH", "/data/Code")
+_PROJECT_PATH = os.environ.get("GHIDRA_PROJECT_PATH", os.getcwd())
 _READ_ONLY = os.environ.get("GHIDRA_READ_ONLY", "0").strip() in ("1", "true", "yes")
 
 _project: GhidraProject | None = None
@@ -223,6 +227,49 @@ def import_and_analyze(file_path: str) -> str:
     _open_programs[name] = program
     _program = program
     return f"Imported and analyzed '{name}'. It is now the active program."
+
+
+@mcp.tool()
+def analyze_existing_program(name: str) -> str:
+    """
+    Run auto-analysis on a program ALREADY present in the active project
+    (e.g. imported by a prior import_and_analyze call that itself
+    completed the import+save but then failed/was interrupted before
+    analysis finished) -- without re-importing it.
+
+    Use this instead of import_and_analyze when list_programs already
+    shows the file but list_functions/decompile_function return nothing
+    for it: import_and_analyze's saveAs step conflicts with the file
+    already being present (FileInUseException), even though nothing is
+    actually still holding it open.
+
+    Saves the analyzed result back to the project. Requires write access
+    (GHIDRA_READ_ONLY must not be set).
+    """
+    if _project is None:
+        raise ValueError("No active project. Call switch_active_project or create_project first.")
+    if _READ_ONLY:
+        raise ValueError("Cannot analyze in read-only mode. Restart without GHIDRA_READ_ONLY=1.")
+
+    from ghidra.program.flatapi import FlatProgramAPI
+    from ghidra.program.util import GhidraProgramUtilities
+    from ghidra.app.script import GhidraScriptUtil
+
+    switch_program(name)
+    program = _program
+
+    GhidraScriptUtil.acquireBundleHostReference()
+    try:
+        flat_api = FlatProgramAPI(program)
+        if not GhidraProgramUtilities.shouldAskToAnalyze(program):
+            return f"'{name}' is already marked analyzed -- nothing to do."
+        flat_api.analyzeAll(program)
+        GhidraProgramUtilities.markProgramAnalyzed(program)
+    finally:
+        GhidraScriptUtil.releaseBundleHostReference()
+
+    _project.save(program)
+    return f"Analyzed and saved '{name}'."
 
 
 @mcp.tool()

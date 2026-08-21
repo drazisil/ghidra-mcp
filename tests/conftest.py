@@ -57,6 +57,28 @@ def _import_and_analyze(project, binary_path: str):
 
 
 @pytest.fixture()
+def unanalyzed_small_program(tmp_path):
+    """
+    Same fixture binary as small_program, but imported (and saved) WITHOUT
+    running analysis -- for testing analyze_existing_program's "run
+    analysis on an already-imported-but-unanalyzed program" path, as
+    distinct from import_and_analyze's "import fresh and analyze" path.
+    """
+    from ghidra.base.project import GhidraProject
+    from java.io import File as JFile
+
+    project = GhidraProject.createProject(str(tmp_path), "test", False)
+    binary = JFile(os.path.join(FIXTURES_DIR, "xtoa.obj"))
+    program = project.importProgram(binary)
+    assert program is not None, "Ghidra could not import xtoa.obj"
+    project.saveAs(program, "/", program.getName(), True)
+    try:
+        yield project, program
+    finally:
+        project.close()
+
+
+@pytest.fixture()
 def small_program(tmp_path):
     """
     A tiny (~5KB), fast-to-analyze COFF object -- a real MSVC-compiled kernel
