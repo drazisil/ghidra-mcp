@@ -33,6 +33,24 @@ os.environ.setdefault("GHIDRA_INSTALL_DIR", ghidra_install)
 import pyghidra
 pyghidra.start()
 
+# ── Cap parallel decompiler threads ──────────────────────────────────────────
+# ParallelDecompiler (ghidra.app.decompiler.parallel.ParallelDecompiler, used
+# by analyzeAll()'s Decompiler Parameter ID / Call Convention / Switch
+# analyzers) runs on a shared thread pool named "Parallel Decompiler"
+# (generic.concurrent.GThreadPool), whose size defaults to
+# Runtime.availableProcessors() -- one native `decompile` subprocess per
+# thread. On a many-core machine that's spawned N simultaneous native
+# processes, each using 1-2GB+ RSS; live-confirmed this OOM-killed the
+# whole cgroup with 9 of them at once (11GB aggregate peak) and, separately,
+# thrashed the host badly enough to be unreachable over SSH until the kernel
+# OOM-killer finished. availableProcessors() is a sane default for CPU
+# parallelism, not for memory -- cap it explicitly rather than trust the two
+# to coincide. Tune via GHIDRA_MAX_DECOMPILE_THREADS if this machine can
+# spare more (or less).
+from generic.concurrent import GThreadPool  # noqa: E402
+_MAX_DECOMPILE_THREADS = int(os.environ.get("GHIDRA_MAX_DECOMPILE_THREADS", "2"))
+GThreadPool.getSharedThreadPool("Parallel Decompiler").setMaxThreadCount(_MAX_DECOMPILE_THREADS)
+
 # ── Ghidra project open ──────────────────────────────────────────────────────
 from ghidra.base.project import GhidraProject  # noqa: E402
 

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.3
+
+- Capped the "Parallel Decompiler" shared thread pool (`generic.concurrent.GThreadPool`, used by `ghidra.app.decompiler.parallel.ParallelDecompiler`) to `GHIDRA_MAX_DECOMPILE_THREADS` (default 2), set right after `pyghidra.start()`. It defaults its max thread count to `Runtime.availableProcessors()` — one native `decompile` subprocess per thread — which on a system with SMT/hyperthreading counts *logical* processors, not physical cores (16 vs. 8 on the machine this was found on). Live-confirmed: `analyzeAll()` spawned 10 simultaneous native `decompile` processes analyzing one small (~370KB) DLL, OOM-killing the whole cgroup (11GB aggregate peak, 4.4GB swap peak) and thrashing the host badly enough to be unreachable over SSH until the kernel OOM-killer finished. CPU count is a sane default for parallelism, not for memory. 3 new tests, `tests/test_decompiler_thread_cap.py`.
+
 ## 0.1.2
 
 - Added `analyze_existing_program(name)`: runs auto-analysis on a program already present in the active project (e.g. a prior `import_and_analyze` call that completed the import+save but was interrupted — OOM-killed, in the real case that motivated this — before analysis itself finished), without re-importing it. Re-running `import_and_analyze` on an already-present filename fails with `ghidra.util.exception.FileInUseException`, even when nothing is actually still holding the file open — this opens the existing `DomainFile` via the same mechanism `switch_active_program` already uses instead of re-importing.
