@@ -77,7 +77,8 @@ def register(mcp, get_program):
         instr_iter = listing.getInstructions(body, True)
         for instr in instr_iter:
             flow = instr.getFlowType()
-            lines.append(f"  {instr.getAddress()}  {instr.getMnemonicString():<12} {flow}")
+            suffix = "" if flow.isFallthrough() else f" {flow}"
+            lines.append(f"  {instr.getAddress()}  {instr.getMnemonicString():<12}{suffix}")
         return "\n".join(lines)
 
     @mcp.tool()

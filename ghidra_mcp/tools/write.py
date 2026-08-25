@@ -36,6 +36,94 @@ def register(mcp, get_program, get_project):
         return f"[rename failed]"
 
     @mcp.tool()
+    def create_function(address: str, name: str = "") -> str:
+        """
+        Create a new function at the given hex address.
+
+        For code Ghidra's auto-analysis never bound to a function boundary --
+        most commonly a computed jump table (`JMP [reg*4+table]`-style
+        dispatch), which auto-analysis frequently leaves as raw INSTR/UNDEF
+        bytes even though the code is live and executes. decompile_function,
+        get_function_instructions, extend_function_body, etc. all fail on
+        such an address with "No function at <addr>" until a function
+        boundary exists. Disassembles at the address first if needed, then
+        creates the function with its body auto-determined by following
+        control flow from the entry point (the same operation as Ghidra's
+        own "Create Function" GUI action / CreateFunctionCmd). Pass an
+        optional name; omitted, Ghidra assigns the default FUN_<addr> name.
+        """
+        from ghidra.app.cmd.function import CreateFunctionCmd
+        from ghidra.app.cmd.disassemble import DisassembleCommand
+        from ghidra.program.model.symbol import SourceType
+        from ghidra.util.task import ConsoleTaskMonitor
+
+        program = get_program()
+        project = get_project()
+        monitor = ConsoleTaskMonitor()
+        listing = program.getListing()
+        func_mgr = program.getFunctionManager()
+        addr_fact = program.getAddressFactory()
+
+        addr = addr_fact.getAddress(address)
+        if addr is None:
+            return f"[create_function] cannot parse address: {address!r}"
+
+        existing = func_mgr.getFunctionAt(addr)
+        if existing is not None:
+            return f"[create_function] a function already exists at {addr}: {existing.getName()!r}"
+
+        tx = program.startTransaction(f"create_function @ {address}")
+        success = False
+        status_msg = ""
+        disasm_note = ""
+        try:
+            if listing.getInstructionAt(addr) is None:
+                disasm_cmd = DisassembleCommand(addr, None, True)
+                disasm_ok = disasm_cmd.applyTo(program, monitor)
+                if not disasm_ok or listing.getInstructionAt(addr) is None:
+                    program.endTransaction(tx, False)
+                    return (
+                        f"[create_function failed at {address}]: could not disassemble "
+                        f"({disasm_cmd.getStatusMsg()!r}) -- no instruction at {addr} to build a function from"
+                    )
+                disasm_note = " (disassembled first)"
+            # Explicit null body forces CreateFunctionCmd's body-by-flow-analysis
+            # path (follow control flow from entry to find the real extent) --
+            # the single-Address constructor was confirmed live to sometimes
+            # produce a degenerate near-empty body instead.
+            from ghidra.program.model.symbol import SourceType as _SourceType
+            cmd = CreateFunctionCmd(None, addr, None, _SourceType.USER_DEFINED)
+            success = cmd.applyTo(program, monitor)
+            status_msg = cmd.getStatusMsg()
+        finally:
+            program.endTransaction(tx, success)
+
+        if not success:
+            return f"[create_function failed at {address}]{disasm_note}: {status_msg}"
+
+        fn = func_mgr.getFunctionAt(addr)
+        if fn is None:
+            return f"[create_function] command reported success but no function found at {addr} afterward"
+        if fn.getBody().getNumAddresses() <= 4:
+            return (
+                f"[create_function] created {fn.getName()} @ {fn.getEntryPoint()} but body is "
+                f"only {fn.getBody().getNumAddresses()} bytes{disasm_note} -- almost certainly "
+                f"degenerate, not a real function boundary. Investigate before trusting it."
+            )
+
+        if name:
+            tx2 = program.startTransaction(f"rename new function @ {address}")
+            success2 = False
+            try:
+                fn.setName(name, SourceType.USER_DEFINED)
+                success2 = True
+            finally:
+                program.endTransaction(tx2, success2)
+
+        project.save(program)
+        return f"Created function {fn.getName()} @ {fn.getEntryPoint()}, body {fn.getBody().getNumAddresses()} bytes"
+
+    @mcp.tool()
     def set_function_comment(name_or_address: str, comment: str) -> str:
         """
         Set the plate (header) comment on a function.

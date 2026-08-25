@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.4
+
+- Added `create_function(address, name="")`: defines a new function at an address Ghidra's auto-analysis never bound to a function boundary. Motivating case: code only reachable via a computed jump table (`JMP [reg*4+table]`-style dispatch) is frequently left as raw INSTR/UNDEF bytes with no function -- `decompile_function`, `get_function_instructions`, and friends all fail on it (`No function at <addr>`) even though the code is live and executes. Disassembles at the address first if not already done, then creates the function via `CreateFunctionCmd` (body auto-determined by following control flow from the entry point -- the same operation as Ghidra's own "Create Function" GUI action). `set_function_signature` was confirmed live not to auto-create (requires an existing function), which is what motivated adding this directly.
+
 ## 0.1.3
 
 - Capped the "Parallel Decompiler" shared thread pool (`generic.concurrent.GThreadPool`, used by `ghidra.app.decompiler.parallel.ParallelDecompiler`) to `GHIDRA_MAX_DECOMPILE_THREADS` (default 2), set right after `pyghidra.start()`. It defaults its max thread count to `Runtime.availableProcessors()` — one native `decompile` subprocess per thread — which on a system with SMT/hyperthreading counts *logical* processors, not physical cores (16 vs. 8 on the machine this was found on). Live-confirmed: `analyzeAll()` spawned 10 simultaneous native `decompile` processes analyzing one small (~370KB) DLL, OOM-killing the whole cgroup (11GB aggregate peak, 4.4GB swap peak) and thrashing the host badly enough to be unreachable over SSH until the kernel OOM-killer finished. CPU count is a sane default for parallelism, not for memory. 3 new tests, `tests/test_decompiler_thread_cap.py`.

@@ -149,6 +149,7 @@ mcp_servers:
 |---|---|
 | `rename_function` | Rename a function by address. |
 | `set_function_comment` | Set the plate comment on a function. |
+| `create_function` | Define a new function at an address Ghidra hasn't already recognized as one (disassembles first if needed; body auto-determined by following control flow, same as the GUI's "Create Function" action). |
 | `create_struct` | Create a new empty struct data type. |
 | `apply_struct_member` | Place a field into a struct at a given byte offset. |
 | `fix_vc6_call_terminators` | Fix VC6 debug build `CALL_TERMINATOR` / `__chkesp` problem across all call sites (two-pass). |
