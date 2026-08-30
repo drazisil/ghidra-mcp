@@ -141,6 +141,7 @@ mcp_servers:
 | `get_struct` | Return struct layout: offsets, field types, sizes. |
 | `list_structs` | List all struct data types, optionally filtered. |
 | `dump_bytes` | Hex dump a memory range with per-byte classification (INSTR/DATA/UNDEF). |
+| `find_symbol` | Find address(es) for a label/symbol by name substring (reverse of address->name lookup). |
 | `switch_active_program` | Switch the active program (must already be in the project). |
 
 ### Write (unavailable in read-only mode)

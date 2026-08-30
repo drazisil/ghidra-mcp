@@ -349,6 +349,35 @@ def register(mcp, get_program):
         return "\n".join(lines)
 
     @mcp.tool()
+    def find_symbol(filter: str, limit: int = 100, include_dynamic: bool = False) -> list[dict]:
+        """
+        Find address(es) for a label/symbol by name (the reverse of an
+        address->name lookup). `filter` matches as a case-insensitive substring.
+        Returns [{name, address, type}]. Default limit 100.
+
+        By default, Ghidra's auto-generated default labels (e.g. 'DAT_0055e190',
+        'LAB_0055e190') are excluded so results stay to symbols someone actually
+        named -- user-defined labels, imports, exports, functions. Pass
+        include_dynamic=True to also search those default names.
+        """
+        program = get_program()
+        sym_tbl = program.getSymbolTable()
+
+        results = []
+        for sym in sym_tbl.getAllSymbols(include_dynamic):
+            name = sym.getName()
+            if filter.lower() not in name.lower():
+                continue
+            results.append({
+                "name": name,
+                "address": str(sym.getAddress()),
+                "type": str(sym.getSymbolType()),
+            })
+            if len(results) >= limit:
+                break
+        return results
+
+    @mcp.tool()
     def search_strings(query: str, max_results: int = 100) -> str:
         """
         Search for defined string data in the program whose value contains `query` (case-insensitive).
