@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.6
+
+- `switch_program`/`switch_active_program` accept a folder-qualified path (e.g. `libs/chkesp`) for a program nested in a project subfolder, not just root-level filenames. `list_programs` now recurses into subfolders too, returning nested entries in that same `subfolder/name` form so callers know exactly what to pass back in. No tests yet.
+
+## 0.1.5
+
+- Added `find_symbol(filter, limit=100, include_dynamic=False)`: finds address(es) for a label/symbol by name substring -- the reverse of the address->name lookups the other tools already do. Motivating case: knowing a label name from prior RE work (or from another tool's output) but needing its address to feed into `decompile_function`/`get_references_to`/etc. Excludes Ghidra's auto-generated default names (`DAT_xxx`, `LAB_xxx`) by default via `getAllSymbols(False)`, so results default to symbols someone actually named -- pass `include_dynamic=True` to search those too.
+
 ## 0.1.4
 
 - Added `create_function(address, name="")`: defines a new function at an address Ghidra's auto-analysis never bound to a function boundary. Motivating case: code only reachable via a computed jump table (`JMP [reg*4+table]`-style dispatch) is frequently left as raw INSTR/UNDEF bytes with no function -- `decompile_function`, `get_function_instructions`, and friends all fail on it (`No function at <addr>`) even though the code is live and executes. Disassembles at the address first if not already done, then creates the function via `CreateFunctionCmd` (body auto-determined by following control flow from the entry point -- the same operation as Ghidra's own "Create Function" GUI action). `set_function_signature` was confirmed live not to auto-create (requires an existing function), which is what motivated adding this directly.
