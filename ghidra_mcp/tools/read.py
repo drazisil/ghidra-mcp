@@ -34,6 +34,7 @@ def register(mcp, get_program):
             return f"[decompile failed: {result.getErrorMessage()}]"
         finally:
             ifc.closeProgram()
+            ifc.dispose()
 
     @mcp.tool()
     def list_functions(filter: str = "", limit: int = 100) -> list[dict]:
@@ -339,6 +340,7 @@ def register(mcp, get_program):
                     matches.append((str(entry), fn.getName(), [hex(h) for h in hit_offsets]))
         finally:
             ifc.closeProgram()
+            ifc.dispose()
 
         header = f"Scanned {total} functions."
         if not matches:
