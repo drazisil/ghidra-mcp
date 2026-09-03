@@ -104,14 +104,25 @@ def get_project():
 
 
 def switch_program(name: str) -> str:
-    """Open (or reuse) a program by filename and make it the active program."""
+    """Open (or reuse) a program by filename and make it the active program.
+
+    `name` may include a folder path relative to the project root, using
+    forward slashes (e.g. 'libs/chkesp') for a program nested in a
+    subfolder -- matching the paths list_programs() returns for those.
+    A bare name (no slash) is looked up at the project root, as before.
+    """
     global _program
     if _project is None:
         raise ValueError("No active project. Call switch_active_project or create_project first.")
     if name in _open_programs:
         _program = _open_programs[name]
         return f"Switched to already-open program: {name}"
-    opened = _project.openProgram("/", name, _READ_ONLY)
+    if "/" in name:
+        folder_path, prog_name = name.rsplit("/", 1)
+        folder_path = "/" + folder_path
+    else:
+        folder_path, prog_name = "/", name
+    opened = _project.openProgram(folder_path, prog_name, _READ_ONLY)
     _open_programs[name] = opened
     _program = opened
     return f"Opened and switched to: {name}"
@@ -187,7 +198,9 @@ if not _READ_ONLY:
 def switch_active_program(program_name: str) -> str:
     """
     Switch the active Ghidra program.
-    Pass the filename as it appears in the project (e.g. 'authlogin.dll', 'MCity_d.exe').
+    Pass the filename as it appears in the project (e.g. 'authlogin.dll', 'MCity_d.exe'),
+    or a folder-qualified path for one nested in a subfolder (e.g. 'libs/chkesp') --
+    see list_programs() for the exact paths to use.
     The program must already be in the project.
     """
     return switch_program(program_name)
@@ -316,18 +329,31 @@ def save_program() -> str:
     return f"Saved '{_program.getName()}' to project."
 
 
+def _list_domain_files(folder, path_prefix: str = "") -> list[str]:
+    """Recursively collect display names for every file in this folder and
+    its subfolders. Nested files are returned as 'subfolder/name' (matching
+    the path format switch_program() accepts), so callers can tell where a
+    program actually lives instead of only seeing root-level ones."""
+    names = [f"{path_prefix}{f.getName()}" for f in folder.getFiles()]
+    for sub in folder.getFolders():
+        names.extend(_list_domain_files(sub, f"{path_prefix}{sub.getName()}/"))
+    return names
+
+
 @mcp.tool()
 def list_programs() -> str:
     """
-    List all programs stored in the active Ghidra project.
+    List all programs stored in the active Ghidra project, including ones
+    nested in subfolders (shown as 'subfolder/name' -- pass that same path
+    to switch_active_program to open it).
     """
     if _project is None:
         raise ValueError("No active project. Call switch_active_project or create_project first.")
     root = _project.getRootFolder()
-    files = root.getFiles()
-    if not files:
+    names = _list_domain_files(root)
+    if not names:
         return "No programs in active project."
-    return "\n".join(f.getName() for f in files)
+    return "\n".join(names)
 
 
 @mcp.tool()
