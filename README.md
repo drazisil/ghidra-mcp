@@ -36,14 +36,18 @@ All configuration is via environment variables:
 | `GHIDRA_PROJECT_PATH` | current working directory | Directory containing the `.gpr` project file |
 | `GHIDRA_PROJECT_NAME` | *(unset — startup project-open is optional)* | Project name to open at startup (no extension), e.g. `myproject` |
 | `GHIDRA_PROGRAM_NAME` | *(unset — startup program-open is optional)* | Program filename to open at startup, e.g. `target.exe` |
-| `GHIDRA_READ_ONLY` | `0` | Set to `1` to open read-only (coexists with Ghidra GUI; write tools unavailable) |
 | `MCP_TRANSPORT` | `stdio` | Transport: `stdio` or `streamable-http` |
 | `MCP_HOST` | `127.0.0.1` | Bind host (streamable-http only) |
 | `MCP_PORT` | `8765` | Bind port (streamable-http only) |
 
-### Read-only mode and Ghidra GUI coexistence
+Ghidra holds a project lock when open. If the server starts while the project is locked by another process (e.g. the Ghidra GUI has it open), it will print a clear error and exit with code 3 — close the GUI (or the other process) first.
 
-Ghidra holds a project lock when open. If you want the MCP server running while the Ghidra GUI is also open, set `GHIDRA_READ_ONLY=1`. Write tools are disabled in this mode, but all read tools work. If the server starts while the project is locked by another process and `GHIDRA_READ_ONLY` is not set, it will print a clear error and exit with code 3.
+### Exposing the server behind a reverse proxy / custom domain
+
+`streamable-http` mode has DNS-rebinding protection on by default whenever `MCP_HOST` is a loopback address, which validates both the `Host` and `Origin` headers against an allowlist (see `_mcp_transport_security` in `server.py`). If you're putting this behind a reverse proxy on a real domain (e.g. Caddy, for use as a claude.ai custom connector), you need both of the following or requests get rejected with 421/403 before ever reaching the tool logic:
+
+- The proxy must rewrite the `Host` header to the loopback value the server expects (e.g. Caddy's `reverse_proxy { header_up Host localhost:<port> }`), since the allowlist only contains loopback patterns.
+- The server's `allowed_hosts`/`allowed_origins` in `server.py` must include the real domain/origin (e.g. `https://claude.ai`) that will actually be hitting it — the proxy fixing up `Host` doesn't help `Origin`, which is checked independently and isn't touched by the header rewrite.
 
 ## Running
 
@@ -91,7 +95,6 @@ RestartPreventExitStatus=3
 Environment="MCP_TRANSPORT=streamable-http"
 Environment="MCP_HOST=0.0.0.0"
 Environment="MCP_PORT=8765"
-Environment="GHIDRA_READ_ONLY=1"
 Environment="GHIDRA_INSTALL_DIR=/path/to/ghidra"
 Environment="GHIDRA_PROJECT_PATH=/path/to/project"
 Environment="GHIDRA_PROJECT_NAME=myproject"
@@ -144,7 +147,7 @@ mcp_servers:
 | `find_symbol` | Find address(es) for a label/symbol by name substring (reverse of address->name lookup). |
 | `switch_active_program` | Switch the active program (must already be in the project). |
 
-### Write (unavailable in read-only mode)
+### Write
 
 | Tool | Description |
 |---|---|

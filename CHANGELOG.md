@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.7
+
+- Fixed 403s when exposing the server behind a reverse proxy on a real domain (e.g. Caddy, for use as a claude.ai custom connector): `FastMCP`'s DNS-rebinding protection (auto-enabled since `MCP_HOST` defaults to loopback) hardcodes `allowed_origins` to localhost/127.0.0.1/::1 only, which silently rejected any request carrying a real `Origin` header regardless of a proxy-side `Host` header rewrite (`Host` and `Origin` are validated independently). `server.py` now passes an explicit `TransportSecuritySettings` including the real domain in both `allowed_hosts` and `allowed_origins`. Documented the proxy + allowlist requirements together in the README, since fixing only one side still 421s/403s.
+- Removed `GHIDRA_READ_ONLY` support (env var, `server.py` gating, README docs) — it wasn't working correctly; deferring a proper read-only implementation to a later pass rather than shipping a broken one. Write tools are now always registered.
+
 ## 0.1.6
 
 - `switch_program`/`switch_active_program` accept a folder-qualified path (e.g. `libs/chkesp`) for a program nested in a project subfolder, not just root-level filenames. `list_programs` now recurses into subfolders too, returning nested entries in that same `subfolder/name` form so callers know exactly what to pass back in. No tests yet.

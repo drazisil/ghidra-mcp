@@ -12,8 +12,6 @@ Configuration via environment variables:
                         directory)
   GHIDRA_PROJECT_NAME   (optional) project to open at startup
   GHIDRA_PROGRAM_NAME   (optional) program to open at startup, requires GHIDRA_PROJECT_NAME
-  GHIDRA_READ_ONLY      set to 1 to open projects read-only (coexists with Ghidra GUI;
-                        write tools are unavailable but all read tools work)
 """
 from __future__ import annotations
 
@@ -55,7 +53,6 @@ GThreadPool.getSharedThreadPool("Parallel Decompiler").setMaxThreadCount(_MAX_DE
 from ghidra.base.project import GhidraProject  # noqa: E402
 
 _PROJECT_PATH = os.environ.get("GHIDRA_PROJECT_PATH", os.getcwd())
-_READ_ONLY = os.environ.get("GHIDRA_READ_ONLY", "0").strip() in ("1", "true", "yes")
 
 _project: GhidraProject | None = None
 _program = None
@@ -65,15 +62,14 @@ _PROGRAM_NAME = os.environ.get("GHIDRA_PROGRAM_NAME")
 
 if _PROJECT_NAME:
     try:
-        _project = GhidraProject.openProject(_PROJECT_PATH, _PROJECT_NAME, _READ_ONLY)
+        _project = GhidraProject.openProject(_PROJECT_PATH, _PROJECT_NAME, False)
         if _PROGRAM_NAME:
-            _program = _project.openProgram("/", _PROGRAM_NAME, _READ_ONLY)
+            _program = _project.openProgram("/", _PROGRAM_NAME, False)
     except Exception as e:
         if "LockException" in str(e) or "LockException" in type(e).__name__:
             print(
                 f"ghidra-mcp: project '{_PROJECT_NAME}' is locked by another process "
-                f"(Ghidra GUI is probably open). "
-                f"Either close Ghidra and restart, or set GHIDRA_READ_ONLY=1 to coexist (read tools only).",
+                f"(Ghidra GUI is probably open). Close Ghidra and restart.",
                 file=sys.stderr,
             )
             sys.exit(3)
@@ -122,7 +118,7 @@ def switch_program(name: str) -> str:
         folder_path = "/" + folder_path
     else:
         folder_path, prog_name = "/", name
-    opened = _project.openProgram(folder_path, prog_name, _READ_ONLY)
+    opened = _project.openProgram(folder_path, prog_name, False)
     _open_programs[name] = opened
     _program = opened
     return f"Opened and switched to: {name}"
@@ -155,21 +151,31 @@ def switch_project(name: str) -> str:
     if name == _project_name and _project is not None:
         return f"Already on project: {name}"
     _close_active_project()
-    _project = GhidraProject.openProject(_PROJECT_PATH, name, _READ_ONLY)
+    _project = GhidraProject.openProject(_PROJECT_PATH, name, False)
     _project_name = name
     return f"Opened and switched to project: {name}"
 
 
 # ── MCP server ───────────────────────────────────────────────────────────────
 from mcp.server.fastmcp import FastMCP  # noqa: E402
+from mcp.server.transport_security import TransportSecuritySettings  # noqa: E402
 
 _mcp_host = os.environ.get("MCP_HOST", "127.0.0.1")
 _mcp_port = int(os.environ.get("MCP_PORT", "8765"))
 
-_mode_note = (
-    "Running read-only — write tools are unavailable (Ghidra GUI may be open)."
-    if _READ_ONLY else
-    "Write tools are available and create their own transactions."
+# FastMCP auto-enables DNS-rebinding protection whenever host is a loopback
+# address, with a hardcoded allowed_origins of localhost/127.0.0.1/::1 only
+# (mcp/server/fastmcp/server.py). That silently 403s any request proxied in
+# under a real domain (e.g. via Caddy, for claude.ai's "custom connector"
+# feature) even though the Host header itself was already fixed up by the
+# proxy -- the Origin header is checked separately and has no such fixup.
+_mcp_transport_security = TransportSecuritySettings(
+    enable_dns_rebinding_protection=True,
+    allowed_hosts=["127.0.0.1:*", "localhost:*", "[::1]:*", "mc.drazisil.com:*"],
+    allowed_origins=[
+        "http://127.0.0.1:*", "http://localhost:*", "http://[::1]:*",
+        "https://claude.ai",
+    ],
 )
 
 mcp = FastMCP(
@@ -179,19 +185,19 @@ mcp = FastMCP(
         "Use list_projects to see available projects, switch_active_project or create_project to open one, "
         "then list_programs and switch_active_program to load a program. "
         "Function names are case-sensitive. "
-        f"{_mode_note}"
+        "Write tools are available and create their own transactions."
     ),
     host=_mcp_host,
     port=_mcp_port,
+    transport_security=_mcp_transport_security,
 )
 
 from ghidra_mcp.tools import read, write, vc6_fixes, pdb_tools  # noqa: E402
 
 read.register(mcp, get_program)
-if not _READ_ONLY:
-    write.register(mcp, get_program, get_project)
-    vc6_fixes.register(mcp, get_program, get_project)
-    pdb_tools.register(mcp, get_program, get_project)
+write.register(mcp, get_program, get_project)
+vc6_fixes.register(mcp, get_program, get_project)
+pdb_tools.register(mcp, get_program, get_project)
 
 
 @mcp.tool()
@@ -224,12 +230,9 @@ def import_and_analyze(file_path: str) -> str:
     Pass the absolute path to the file on disk (e.g. '/data/Downloads/MCity_d.exe').
     After import, the new program becomes the active program.
     Returns the name of the imported program.
-    Requires write access (GHIDRA_READ_ONLY must not be set).
     """
     if _project is None:
         raise ValueError("No active project. Call switch_active_project or create_project first.")
-    if _READ_ONLY:
-        raise ValueError("Cannot import in read-only mode. Restart without GHIDRA_READ_ONLY=1.")
 
     from ghidra.program.flatapi import FlatProgramAPI
     from ghidra.program.util import GhidraProgramUtilities
@@ -274,13 +277,10 @@ def analyze_existing_program(name: str) -> str:
     already being present (FileInUseException), even though nothing is
     actually still holding it open.
 
-    Saves the analyzed result back to the project. Requires write access
-    (GHIDRA_READ_ONLY must not be set).
+    Saves the analyzed result back to the project.
     """
     if _project is None:
         raise ValueError("No active project. Call switch_active_project or create_project first.")
-    if _READ_ONLY:
-        raise ValueError("Cannot analyze in read-only mode. Restart without GHIDRA_READ_ONLY=1.")
 
     from ghidra.program.flatapi import FlatProgramAPI
     from ghidra.program.util import GhidraProgramUtilities
