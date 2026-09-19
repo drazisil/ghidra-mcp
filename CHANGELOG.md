@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.8
+## 0.2.0
 
 - `get_function_instructions` now includes each instruction's operands (e.g. `MOV EAX,dword ptr [EBP + -0x4]`), not just the bare mnemonic -- a listing of `MOV`/`PUSH`/`CALL` with no operands couldn't be used to follow data or control flow. Flow type is still shown only when it isn't plain fall-through. Added a test against the real fixture program.
 - Tool failures are now real tool errors with a next-step hint, instead of `"[... failed]"` strings returned as if they were successful results. `No function at <addr>` now points at `create_function`; an unresolvable name points at `find_symbol`; a failed decompile points at `get_function_instructions` / `extend_function_body` / `fix_vc6_call_terminators`; a missing struct or member type points at `list_structs` / `create_struct`; `create_function` where one already exists points at `decompile_function` / `rename_function`. Any tool called with no active program now raises `No active program. Call switch_active_program first` instead of an `AttributeError` on `None`.
