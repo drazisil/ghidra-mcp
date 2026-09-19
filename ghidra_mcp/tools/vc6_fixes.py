@@ -9,8 +9,8 @@ from __future__ import annotations
 
 def register(mcp, get_program, get_project):
 
-    @mcp.tool()
-    def fix_vc6_call_terminators(chkesp_address: str = "") -> dict:
+    @mcp.tool(structured_output=False)
+    def fix_vc6_call_terminators(chkesp_address: str = "") -> str:
         """
         Fix the __chkesp CALL_TERMINATOR problem in VC6 debug builds.
 
@@ -23,7 +23,8 @@ def register(mcp, get_program, get_project):
                    FlowType from scratch (→ UNCONDITIONAL_CALL instead of CALL_TERMINATOR).
 
         chkesp_address: hex address of __chkesp (optional — found by name if omitted).
-        Returns {extended: N, redisassembled: N, skipped: N}.
+        Returns one summary line of counts: extended, redisassembled, skipped_extend,
+        skipped_redisasm, total_call_sites.
         """
         from ghidra.program.model.address import AddressSet
         from ghidra.app.cmd.disassemble import DisassembleCommand
@@ -152,15 +153,13 @@ def register(mcp, get_program, get_project):
         if success2:
             project.save(program)
 
-        return {
-            "extended": extended,
-            "redisassembled": redisassembled,
-            "skipped_extend": skipped_extend,
-            "skipped_redisasm": skipped_redisasm,
-            "total_call_sites": len(call_sites),
-        }
+        return (
+            f"extended={extended} redisassembled={redisassembled} "
+            f"skipped_extend={skipped_extend} skipped_redisasm={skipped_redisasm} "
+            f"total_call_sites={len(call_sites)}"
+        )
 
-    @mcp.tool()
+    @mcp.tool(structured_output=False)
     def extend_function_body(function_address: str) -> str:
         """
         Extend a single function's body past a CALL __chkesp terminator.
@@ -228,15 +227,13 @@ def register(mcp, get_program, get_project):
         finally:
             program.endTransaction(tx, success)
 
-        if success:
-            project.save(program)
-            return (
-                f"{fn.getName()} @ {fn.getEntryPoint()}: "
-                f"extended {extended_count}/{len(terminator_addrs)} terminator sites"
-            )
-        return f"[extend_function_body failed for {fn.getName()}]"
+        project.save(program)
+        return (
+            f"{fn.getName()} @ {fn.getEntryPoint()}: "
+            f"extended {extended_count}/{len(terminator_addrs)} terminator sites"
+        )
 
-    @mcp.tool()
+    @mcp.tool(structured_output=False)
     def redisassemble_instruction(address: str) -> str:
         """
         Clear and re-disassemble the instruction at the given address.
@@ -252,6 +249,8 @@ def register(mcp, get_program, get_project):
         addr_fact = program.getAddressFactory()
 
         addr = addr_fact.getAddress(address)
+        if addr is None:
+            raise ValueError(f"Cannot parse address {address!r}. Pass a hex address like '0055e190'.")
 
         tx = program.startTransaction(f"re-disassemble {address}")
         success = False
@@ -263,10 +262,11 @@ def register(mcp, get_program, get_project):
         finally:
             program.endTransaction(tx, success)
 
-        if success:
-            project.save(program)
-            instr = listing.getInstructionAt(addr)
-            if instr:
-                return f"{addr}: {instr.getMnemonicString()} → FlowType={instr.getFlowType()}"
-            return f"{addr}: re-disassembled (instruction not readable after)"
-        return f"[redisassemble_instruction failed at {address}]"
+        project.save(program)
+        instr = listing.getInstructionAt(addr)
+        if instr:
+            return f"{addr}: {instr.getMnemonicString()} → FlowType={instr.getFlowType()}"
+        return (
+            f"{addr}: re-disassembled but no instruction is readable there afterward. "
+            f"Use dump_bytes to check whether these bytes are code or data."
+        )

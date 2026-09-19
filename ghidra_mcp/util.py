@@ -32,7 +32,10 @@ def resolve_address(program, name_or_address: str):
         if fn.getName() == name_or_address:
             return fn.getEntryPoint()
 
-    raise ValueError(f"Cannot resolve address or name: {name_or_address!r}")
+    raise ValueError(
+        f"Cannot resolve {name_or_address!r} as an address or symbol name. "
+        f"Use find_symbol('<substring>') to look up a name, or pass a hex address like '0055e190'."
+    )
 
 
 def resolve_function(program, name_or_address: str):
@@ -46,7 +49,11 @@ def resolve_function(program, name_or_address: str):
     if fn is None:
         fn = func_mgr.getFunctionContaining(addr)
     if fn is None:
-        raise ValueError(f"No function at {addr} (from {name_or_address!r})")
+        raise ValueError(
+            f"No function at {addr} (from {name_or_address!r}). If this is live code Ghidra "
+            f"never bound to a function (e.g. a jump-table target), call create_function('{addr}') "
+            f"first, then retry. To check what is there, use dump_bytes."
+        )
     return fn
 
 

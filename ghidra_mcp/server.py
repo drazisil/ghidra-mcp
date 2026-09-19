@@ -92,6 +92,8 @@ _project_name: str | None = _PROJECT_NAME if _PROJECT_NAME and _project else Non
 
 
 def get_program():
+    if _program is None:
+        raise ValueError("No active program. Call switch_active_program first (list_programs shows what's available).")
     return _program
 
 
@@ -200,7 +202,7 @@ vc6_fixes.register(mcp, get_program, get_project)
 pdb_tools.register(mcp, get_program, get_project)
 
 
-@mcp.tool()
+@mcp.tool(structured_output=False)
 def switch_active_program(program_name: str) -> str:
     """
     Switch the active Ghidra program.
@@ -212,7 +214,7 @@ def switch_active_program(program_name: str) -> str:
     return switch_program(program_name)
 
 
-@mcp.tool()
+@mcp.tool(structured_output=False)
 def switch_active_project(project_name: str) -> str:
     """
     Switch the active Ghidra project.
@@ -223,7 +225,7 @@ def switch_active_project(project_name: str) -> str:
     return switch_project(project_name)
 
 
-@mcp.tool()
+@mcp.tool(structured_output=False)
 def import_and_analyze(file_path: str) -> str:
     """
     Import a binary file into the active Ghidra project and run auto-analysis on it.
@@ -263,7 +265,7 @@ def import_and_analyze(file_path: str) -> str:
     return f"Imported and analyzed '{name}'. It is now the active program."
 
 
-@mcp.tool()
+@mcp.tool(structured_output=False)
 def analyze_existing_program(name: str) -> str:
     """
     Run auto-analysis on a program ALREADY present in the active project
@@ -303,7 +305,7 @@ def analyze_existing_program(name: str) -> str:
     return f"Analyzed and saved '{name}'."
 
 
-@mcp.tool()
+@mcp.tool(structured_output=False)
 def create_project(project_name: str) -> str:
     """
     Create a new Ghidra project in the same directory as the current project and switch to it.
@@ -318,7 +320,7 @@ def create_project(project_name: str) -> str:
     return f"Created and switched to new project: {project_name}"
 
 
-@mcp.tool()
+@mcp.tool(structured_output=False)
 def save_program() -> str:
     """
     Save the currently active program to the active Ghidra project.
@@ -340,7 +342,7 @@ def _list_domain_files(folder, path_prefix: str = "") -> list[str]:
     return names
 
 
-@mcp.tool()
+@mcp.tool(structured_output=False)
 def list_programs() -> str:
     """
     List all programs stored in the active Ghidra project, including ones
@@ -356,7 +358,7 @@ def list_programs() -> str:
     return "\n".join(names)
 
 
-@mcp.tool()
+@mcp.tool(structured_output=False)
 def list_projects() -> str:
     """
     List all Ghidra projects available in the project directory.

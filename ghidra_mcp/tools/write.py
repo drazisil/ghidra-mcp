@@ -8,7 +8,7 @@ from __future__ import annotations
 def register(mcp, get_program, get_project):
     """Register all write tools onto the FastMCP instance."""
 
-    @mcp.tool()
+    @mcp.tool(structured_output=False)
     def rename_function(address: str, new_name: str) -> str:
         """
         Rename the function at the given hex address.
@@ -30,12 +30,12 @@ def register(mcp, get_program, get_project):
         finally:
             program.endTransaction(tx, success)
 
-        if success:
-            project.save(program)
-            return f"Renamed {fn.getEntryPoint()} : {old_name!r} → {new_name!r}"
-        return f"[rename failed]"
+        # Reaching here means setName didn't raise (any failure propagates as a
+        # tool error), so the transaction committed.
+        project.save(program)
+        return f"Renamed {fn.getEntryPoint()} : {old_name!r} → {new_name!r}"
 
-    @mcp.tool()
+    @mcp.tool(structured_output=False)
     def create_function(address: str, name: str = "") -> str:
         """
         Create a new function at the given hex address.
@@ -66,11 +66,14 @@ def register(mcp, get_program, get_project):
 
         addr = addr_fact.getAddress(address)
         if addr is None:
-            return f"[create_function] cannot parse address: {address!r}"
+            raise ValueError(f"Cannot parse address {address!r}. Pass a hex address like '0055e190'.")
 
         existing = func_mgr.getFunctionAt(addr)
         if existing is not None:
-            return f"[create_function] a function already exists at {addr}: {existing.getName()!r}"
+            raise ValueError(
+                f"A function already exists at {addr}: {existing.getName()!r}. "
+                f"Use decompile_function to view it or rename_function to rename it."
+            )
 
         tx = program.startTransaction(f"create_function @ {address}")
         success = False
@@ -81,10 +84,11 @@ def register(mcp, get_program, get_project):
                 disasm_cmd = DisassembleCommand(addr, None, True)
                 disasm_ok = disasm_cmd.applyTo(program, monitor)
                 if not disasm_ok or listing.getInstructionAt(addr) is None:
-                    program.endTransaction(tx, False)
-                    return (
-                        f"[create_function failed at {address}]: could not disassemble "
-                        f"({disasm_cmd.getStatusMsg()!r}) -- no instruction at {addr} to build a function from"
+                    # The finally block below ends the transaction (success is still False).
+                    raise ValueError(
+                        f"create_function failed at {address}: could not disassemble "
+                        f"({disasm_cmd.getStatusMsg()!r}) -- no instruction at {addr} to build a function from. "
+                        f"Use dump_bytes to check whether these bytes are code or data."
                     )
                 disasm_note = " (disassembled first)"
             # Explicit null body forces CreateFunctionCmd's body-by-flow-analysis
@@ -99,11 +103,14 @@ def register(mcp, get_program, get_project):
             program.endTransaction(tx, success)
 
         if not success:
-            return f"[create_function failed at {address}]{disasm_note}: {status_msg}"
+            raise ValueError(
+                f"create_function failed at {address}{disasm_note}: {status_msg}. "
+                f"Use dump_bytes to check the surrounding bytes, or redisassemble_instruction to force re-disassembly."
+            )
 
         fn = func_mgr.getFunctionAt(addr)
         if fn is None:
-            return f"[create_function] command reported success but no function found at {addr} afterward"
+            raise ValueError(f"create_function reported success but no function was found at {addr} afterward")
         if fn.getBody().getNumAddresses() <= 4:
             return (
                 f"[create_function] created {fn.getName()} @ {fn.getEntryPoint()} but body is "
@@ -123,7 +130,7 @@ def register(mcp, get_program, get_project):
         project.save(program)
         return f"Created function {fn.getName()} @ {fn.getEntryPoint()}, body {fn.getBody().getNumAddresses()} bytes"
 
-    @mcp.tool()
+    @mcp.tool(structured_output=False)
     def set_function_comment(name_or_address: str, comment: str) -> str:
         """
         Set the plate (header) comment on a function.
@@ -145,12 +152,10 @@ def register(mcp, get_program, get_project):
         finally:
             program.endTransaction(tx, success)
 
-        if success:
-            project.save(program)
-            return f"Comment set on {fn.getName()} @ {fn.getEntryPoint()}"
-        return "[comment failed]"
+        project.save(program)
+        return f"Comment set on {fn.getName()} @ {fn.getEntryPoint()}"
 
-    @mcp.tool()
+    @mcp.tool(structured_output=False)
     def apply_struct_member(
         struct_name: str,
         offset: int,
@@ -173,18 +178,24 @@ def register(mcp, get_program, get_project):
         struct_results = ArrayList()
         dtm.findDataTypes(struct_name, struct_results)
         if struct_results.isEmpty():
-            return f"[struct not found: {struct_name!r}]"
+            raise ValueError(
+                f"Struct {struct_name!r} not found. Use list_structs(filter='<substring>') to find it, "
+                f"or create_struct to make it."
+            )
         struct_dt = struct_results[0]
         while isinstance(struct_dt, TypedefDataType):
             struct_dt = struct_dt.getDataType()
         if not isinstance(struct_dt, StructureDataType):
-            return f"[{struct_name!r} is not a struct]"
+            raise ValueError(f"{struct_name!r} is a {type(struct_dt).__name__}, not a struct.")
 
         # Resolve member type
         type_results = ArrayList()
         dtm.findDataTypes(type_name, type_results)
         if type_results.isEmpty():
-            return f"[type not found: {type_name!r}]"
+            raise ValueError(
+                f"Member type {type_name!r} not found. Use list_structs(filter='<substring>') for "
+                f"struct types; names are case-sensitive."
+            )
         member_type = type_results[0]
 
         member_size = member_type.getLength()
@@ -206,15 +217,13 @@ def register(mcp, get_program, get_project):
         finally:
             dtm.endTransaction(tx, success)
 
-        if success:
-            project.save(program)
-            return (
-                f"Applied {type_name} {member_name} at [{offset}] in {struct_name} "
-                f"(size={member_size})"
-            )
-        return "[apply_struct_member failed]"
+        project.save(program)
+        return (
+            f"Applied {type_name} {member_name} at [{offset}] in {struct_name} "
+            f"(size={member_size})"
+        )
 
-    @mcp.tool()
+    @mcp.tool(structured_output=False)
     def create_struct(name: str, size: int, category: str = "/") -> str:
         """
         Create a new empty struct data type of the given size.
@@ -237,12 +246,10 @@ def register(mcp, get_program, get_project):
         finally:
             dtm.endTransaction(tx, success)
 
-        if success:
-            project.save(program)
-            return f"Created struct {name} ({size} bytes) in {category}"
-        return "[create_struct failed]"
+        project.save(program)
+        return f"Created struct {name} ({size} bytes) in {category}"
 
-    @mcp.tool()
+    @mcp.tool(structured_output=False)
     def set_calling_convention(name_or_address: str, convention: str) -> str:
         """
         Set a function's calling convention (e.g. '__cdecl', '__stdcall', '__thiscall', '__fastcall').
@@ -280,7 +287,7 @@ def register(mcp, get_program, get_project):
             f"Valid conventions for this program: {valid}"
         )
 
-    @mcp.tool()
+    @mcp.tool(structured_output=False)
     def set_function_signature(name_or_address: str, signature: str) -> str:
         """
         Set a function's return type, name, and parameters from a C-style declaration string
@@ -328,4 +335,4 @@ def register(mcp, get_program, get_project):
         if success:
             project.save(program)
             return f"Signature applied at {fn.getEntryPoint()}: {signature}"
-        return f"[set_function_signature failed] {cmd.getStatusMsg()}"
+        raise ValueError(f"set_function_signature failed at {fn.getEntryPoint()}: {cmd.getStatusMsg()}")

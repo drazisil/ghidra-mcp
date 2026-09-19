@@ -36,7 +36,7 @@ from __future__ import annotations
 
 def register(mcp, get_program, get_project):
 
-    @mcp.tool()
+    @mcp.tool(structured_output=False)
     def load_pdb(pdb_path: str, control: str = "ALL") -> str:
         """
         Load a Microsoft PDB file (PDB 7.0 / RSDS format only) and apply its symbols,
