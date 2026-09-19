@@ -94,3 +94,24 @@ def test_find_symbol_respects_limit(small_program):
     matches = _find_symbol(small_program, "limit_test_label", limit=3)
 
     assert len(matches) == 3
+
+
+def test_instruction_listing_line_includes_operands(small_program):
+    """get_function_instructions must render operands, not just the mnemonic.
+
+    Mirrors the tool's per-instruction formatting (`f"{instr}"`); an
+    instruction with operands must print more than its bare mnemonic.
+    """
+    fn = _first_function(small_program)
+    listing = small_program.getListing()
+
+    with_operands = [
+        i for i in listing.getInstructions(fn.getBody(), True)
+        if i.getNumOperands() > 0 and i.getDefaultOperandRepresentation(0)
+    ]
+    assert with_operands, "fixture function has no instruction with operands"
+
+    for instr in with_operands:
+        rendered = str(instr)
+        assert rendered != instr.getMnemonicString()
+        assert instr.getDefaultOperandRepresentation(0) in rendered

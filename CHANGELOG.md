@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.8
+
+- `get_function_instructions` now includes each instruction's operands (e.g. `MOV EAX,dword ptr [EBP + -0x4]`), not just the bare mnemonic -- a listing of `MOV`/`PUSH`/`CALL` with no operands couldn't be used to follow data or control flow. Flow type is still shown only when it isn't plain fall-through. Added a test against the real fixture program.
+
 ## 0.1.7
 
 - Fixed 403s when exposing the server behind a reverse proxy on a real domain (e.g. Caddy, for use as a claude.ai custom connector): `FastMCP`'s DNS-rebinding protection (auto-enabled since `MCP_HOST` defaults to loopback) hardcodes `allowed_origins` to localhost/127.0.0.1/::1 only, which silently rejected any request carrying a real `Origin` header regardless of a proxy-side `Host` header rewrite (`Host` and `Origin` are validated independently). `server.py` now passes an explicit `TransportSecuritySettings` including the real domain in both `allowed_hosts` and `allowed_origins`. Documented the proxy + allowlist requirements together in the README, since fixing only one side still 421s/403s.

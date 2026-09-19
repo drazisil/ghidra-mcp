@@ -64,7 +64,8 @@ def register(mcp, get_program):
     @mcp.tool()
     def get_function_instructions(name_or_address: str) -> str:
         """
-        List all instructions in a function with address, mnemonic, and flow type.
+        List all instructions in a function with address, mnemonic, operands, and
+        flow type (flow type is shown only when it isn't plain fall-through).
         Pass a function name or hex address.
         """
         from ghidra_mcp.util import resolve_function
@@ -79,7 +80,7 @@ def register(mcp, get_program):
         for instr in instr_iter:
             flow = instr.getFlowType()
             suffix = "" if flow.isFallthrough() else f" {flow}"
-            lines.append(f"  {instr.getAddress()}  {instr.getMnemonicString():<12}{suffix}")
+            lines.append(f"  {instr.getAddress()}  {instr}{suffix}")
         return "\n".join(lines)
 
     @mcp.tool()
