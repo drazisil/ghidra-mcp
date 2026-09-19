@@ -92,6 +92,8 @@ _project_name: str | None = _PROJECT_NAME if _PROJECT_NAME and _project else Non
 
 
 def get_program():
+    if _program is None:
+        raise ValueError("No active program. Call switch_active_program first (list_programs shows what's available).")
     return _program
 
 

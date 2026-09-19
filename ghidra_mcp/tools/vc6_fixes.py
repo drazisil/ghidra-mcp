@@ -228,13 +228,11 @@ def register(mcp, get_program, get_project):
         finally:
             program.endTransaction(tx, success)
 
-        if success:
-            project.save(program)
-            return (
-                f"{fn.getName()} @ {fn.getEntryPoint()}: "
-                f"extended {extended_count}/{len(terminator_addrs)} terminator sites"
-            )
-        return f"[extend_function_body failed for {fn.getName()}]"
+        project.save(program)
+        return (
+            f"{fn.getName()} @ {fn.getEntryPoint()}: "
+            f"extended {extended_count}/{len(terminator_addrs)} terminator sites"
+        )
 
     @mcp.tool()
     def redisassemble_instruction(address: str) -> str:
@@ -252,6 +250,8 @@ def register(mcp, get_program, get_project):
         addr_fact = program.getAddressFactory()
 
         addr = addr_fact.getAddress(address)
+        if addr is None:
+            raise ValueError(f"Cannot parse address {address!r}. Pass a hex address like '0055e190'.")
 
         tx = program.startTransaction(f"re-disassemble {address}")
         success = False
@@ -263,10 +263,11 @@ def register(mcp, get_program, get_project):
         finally:
             program.endTransaction(tx, success)
 
-        if success:
-            project.save(program)
-            instr = listing.getInstructionAt(addr)
-            if instr:
-                return f"{addr}: {instr.getMnemonicString()} → FlowType={instr.getFlowType()}"
-            return f"{addr}: re-disassembled (instruction not readable after)"
-        return f"[redisassemble_instruction failed at {address}]"
+        project.save(program)
+        instr = listing.getInstructionAt(addr)
+        if instr:
+            return f"{addr}: {instr.getMnemonicString()} → FlowType={instr.getFlowType()}"
+        return (
+            f"{addr}: re-disassembled but no instruction is readable there afterward. "
+            f"Use dump_bytes to check whether these bytes are code or data."
+        )

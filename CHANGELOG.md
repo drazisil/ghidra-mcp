@@ -3,6 +3,10 @@
 ## 0.1.8
 
 - `get_function_instructions` now includes each instruction's operands (e.g. `MOV EAX,dword ptr [EBP + -0x4]`), not just the bare mnemonic -- a listing of `MOV`/`PUSH`/`CALL` with no operands couldn't be used to follow data or control flow. Flow type is still shown only when it isn't plain fall-through. Added a test against the real fixture program.
+- Tool failures are now real tool errors with a next-step hint, instead of `"[... failed]"` strings returned as if they were successful results. `No function at <addr>` now points at `create_function`; an unresolvable name points at `find_symbol`; a failed decompile points at `get_function_instructions` / `extend_function_body` / `fix_vc6_call_terminators`; a missing struct or member type points at `list_structs` / `create_struct`; `create_function` where one already exists points at `decompile_function` / `rename_function`. Any tool called with no active program now raises `No active program. Call switch_active_program first` instead of an `AttributeError` on `None`.
+- Removed unreachable `"[... failed]"` fallbacks in `rename_function`, `set_function_comment`, `apply_struct_member`, `create_struct`, `extend_function_body` and `redisassemble_instruction` (any failure already propagated as an exception). `redisassemble_instruction` now rejects an unparseable address instead of passing `None` to Ghidra.
+- Fixed `create_function` ending its transaction twice on the "could not disassemble" path (explicit `endTransaction` plus the `finally`).
+- Added `tests/test_error_hints.py`, which calls the real registered tool functions and asserts each error names its recovery tool.
 
 ## 0.1.7
 

@@ -31,7 +31,11 @@ def register(mcp, get_program):
             result = ifc.decompileFunction(fn, 60, ConsoleTaskMonitor())
             if result.decompileCompleted():
                 return result.getDecompiledFunction().getC()
-            return f"[decompile failed: {result.getErrorMessage()}]"
+            raise ValueError(
+                f"Decompile of {fn.getName()} @ {fn.getEntryPoint()} failed: {result.getErrorMessage()}. "
+                f"Inspect the raw instructions with get_function_instructions; if the body is cut off "
+                f"after a CALL __chkesp, extend_function_body or fix_vc6_call_terminators repairs it."
+            )
         finally:
             ifc.closeProgram()
             ifc.dispose()
@@ -98,7 +102,9 @@ def register(mcp, get_program):
         dtm.findDataTypes(name, results)
 
         if results.isEmpty():
-            return f"[no data type named {name!r}]"
+            raise ValueError(
+                f"No data type named {name!r}. Use list_structs(filter='<substring>') to find struct names."
+            )
 
         dt = results[0]
         # Unwrap typedef if needed
