@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.1
+
+- Added `get_instructions_around(address, before=5, after=5)`: a window of disassembly around an address, like `grep -B/-A`, instead of `get_function_instructions` dumping the whole containing function (hundreds of lines for a big one) when only a few instructions are wanted. Each line is `address  raw bytes  instruction`, the instruction containing the address is marked `=>`, a flow type is shown only when it isn't plain fall-through, and a `...` line marks bytes between two instructions that aren't disassembled. An address in the middle of an instruction resolves to the instruction containing it. Counts are capped at 200 and say so. No instruction at the address raises an error that points at `dump_bytes` (data) and `create_function` / `redisassemble_instruction` (code Ghidra hasn't defined). Tests in `tests/test_instructions_around.py` run the tool through a real FastMCP instance.
+
 ## 0.2.0
 
 - `get_function_instructions` now includes each instruction's operands (e.g. `MOV EAX,dword ptr [EBP + -0x4]`), not just the bare mnemonic -- a listing of `MOV`/`PUSH`/`CALL` with no operands couldn't be used to follow data or control flow. Flow type is still shown only when it isn't plain fall-through. Added a test against the real fixture program.
