@@ -7,6 +7,8 @@
 - Removed unreachable `"[... failed]"` fallbacks in `rename_function`, `set_function_comment`, `apply_struct_member`, `create_struct`, `extend_function_body` and `redisassemble_instruction` (any failure already propagated as an exception). `redisassemble_instruction` now rejects an unparseable address instead of passing `None` to Ghidra.
 - Fixed `create_function` ending its transaction twice on the "could not disassemble" path (explicit `endTransaction` plus the `finally`).
 - Added `tests/test_error_hints.py`, which calls the real registered tool functions and asserts each error names its recovery tool.
+- Results now reach clients as plain text instead of a JSON wrapper. FastMCP sends a structured-output copy of every return value (`{"result": "..."}`), and Claude Code showed that copy, so each decompile arrived with escaped `\n` and `\"` throughout (630 of 679 decompiles in real transcripts). All tools are registered with `structured_output=False`. `list_functions`, `find_symbol`, `get_references_to`, `get_function_calls`, `list_structs` and `fix_vc6_call_terminators` returned `list[dict]`/`dict` and now return compact text: one line per item (`address  name  ...`) or one summary line, with an explicit message for an empty result. **Breaking for any non-Claude consumer that parsed the old JSON.** `list_functions` and `find_symbol` now also say when they stopped at `limit`.
+- Added `tests/test_result_shape.py`, which runs the tools through a real FastMCP instance and asserts the protocol output is a single plain `TextContent`.
 
 ## 0.1.7
 

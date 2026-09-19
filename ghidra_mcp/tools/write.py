@@ -8,7 +8,7 @@ from __future__ import annotations
 def register(mcp, get_program, get_project):
     """Register all write tools onto the FastMCP instance."""
 
-    @mcp.tool()
+    @mcp.tool(structured_output=False)
     def rename_function(address: str, new_name: str) -> str:
         """
         Rename the function at the given hex address.
@@ -35,7 +35,7 @@ def register(mcp, get_program, get_project):
         project.save(program)
         return f"Renamed {fn.getEntryPoint()} : {old_name!r} → {new_name!r}"
 
-    @mcp.tool()
+    @mcp.tool(structured_output=False)
     def create_function(address: str, name: str = "") -> str:
         """
         Create a new function at the given hex address.
@@ -130,7 +130,7 @@ def register(mcp, get_program, get_project):
         project.save(program)
         return f"Created function {fn.getName()} @ {fn.getEntryPoint()}, body {fn.getBody().getNumAddresses()} bytes"
 
-    @mcp.tool()
+    @mcp.tool(structured_output=False)
     def set_function_comment(name_or_address: str, comment: str) -> str:
         """
         Set the plate (header) comment on a function.
@@ -155,7 +155,7 @@ def register(mcp, get_program, get_project):
         project.save(program)
         return f"Comment set on {fn.getName()} @ {fn.getEntryPoint()}"
 
-    @mcp.tool()
+    @mcp.tool(structured_output=False)
     def apply_struct_member(
         struct_name: str,
         offset: int,
@@ -223,7 +223,7 @@ def register(mcp, get_program, get_project):
             f"(size={member_size})"
         )
 
-    @mcp.tool()
+    @mcp.tool(structured_output=False)
     def create_struct(name: str, size: int, category: str = "/") -> str:
         """
         Create a new empty struct data type of the given size.
@@ -249,7 +249,7 @@ def register(mcp, get_program, get_project):
         project.save(program)
         return f"Created struct {name} ({size} bytes) in {category}"
 
-    @mcp.tool()
+    @mcp.tool(structured_output=False)
     def set_calling_convention(name_or_address: str, convention: str) -> str:
         """
         Set a function's calling convention (e.g. '__cdecl', '__stdcall', '__thiscall', '__fastcall').
@@ -287,7 +287,7 @@ def register(mcp, get_program, get_project):
             f"Valid conventions for this program: {valid}"
         )
 
-    @mcp.tool()
+    @mcp.tool(structured_output=False)
     def set_function_signature(name_or_address: str, signature: str) -> str:
         """
         Set a function's return type, name, and parameters from a C-style declaration string

@@ -12,7 +12,7 @@ if TYPE_CHECKING:
 def register(mcp, get_program):
     """Register all read tools onto the FastMCP instance."""
 
-    @mcp.tool()
+    @mcp.tool(structured_output=False)
     def decompile_function(name_or_address: str) -> str:
         """
         Decompile a function and return the C source.
@@ -40,32 +40,34 @@ def register(mcp, get_program):
             ifc.closeProgram()
             ifc.dispose()
 
-    @mcp.tool()
-    def list_functions(filter: str = "", limit: int = 100) -> list[dict]:
+    @mcp.tool(structured_output=False)
+    def list_functions(filter: str = "", limit: int = 100) -> str:
         """
         List functions, optionally filtered by a substring of the name.
-        Returns [{name, address, size}]. Default limit 100.
+        One line per function: `address  name  size`. Default limit 100; says so
+        when the list was cut off.
         """
-        from ghidra_mcp.util import resolve_address
-
         program = get_program()
         func_mgr = program.getFunctionManager()
 
         results = []
+        truncated = False
         for fn in func_mgr.getFunctions(True):
             name = fn.getName()
             if filter and filter.lower() not in name.lower():
                 continue
-            results.append({
-                "name": name,
-                "address": str(fn.getEntryPoint()),
-                "size": fn.getBody().getNumAddresses(),
-            })
             if len(results) >= limit:
+                truncated = True
                 break
-        return results
+            results.append(f"{fn.getEntryPoint()}  {name}  {fn.getBody().getNumAddresses()}")
 
-    @mcp.tool()
+        if not results:
+            return f"No functions match {filter!r}." if filter else "No functions in this program."
+        if truncated:
+            results.append(f"(showing first {limit}; narrow with `filter` or raise `limit`)")
+        return "\n".join(results)
+
+    @mcp.tool(structured_output=False)
     def get_function_instructions(name_or_address: str) -> str:
         """
         List all instructions in a function with address, mnemonic, operands, and
@@ -87,7 +89,7 @@ def register(mcp, get_program):
             lines.append(f"  {instr.getAddress()}  {instr}{suffix}")
         return "\n".join(lines)
 
-    @mcp.tool()
+    @mcp.tool(structured_output=False)
     def get_struct(name: str) -> str:
         """
         Return the layout of a named struct/typedef: offsets, field types, field names, total size.
@@ -121,11 +123,11 @@ def register(mcp, get_program):
             )
         return "\n".join(lines)
 
-    @mcp.tool()
-    def list_structs(filter: str = "") -> list[dict]:
+    @mcp.tool(structured_output=False)
+    def list_structs(filter: str = "") -> str:
         """
         List all struct data types, optionally filtered by name substring.
-        Returns [{name, size, category}].
+        One line per struct, sorted by name: `name  size  category`.
         """
         from ghidra.program.model.data import Structure
 
@@ -139,14 +141,12 @@ def register(mcp, get_program):
             name = dt.getName()
             if filter and filter.lower() not in name.lower():
                 continue
-            results.append({
-                "name": name,
-                "size": dt.getLength(),
-                "category": str(dt.getCategoryPath()),
-            })
-        return sorted(results, key=lambda x: x["name"])
+            results.append((name, f"{name}  {dt.getLength()}  {dt.getCategoryPath()}"))
+        if not results:
+            return f"No structs match {filter!r}." if filter else "No structs in this program."
+        return "\n".join(line for _, line in sorted(results))
 
-    @mcp.tool()
+    @mcp.tool(structured_output=False)
     def dump_bytes(start: str, end: str) -> str:
         """
         Hex dump a memory range with per-byte classification (INSTR/DATA/UNDEF).
@@ -213,11 +213,12 @@ def register(mcp, get_program):
         flush_row()
         return "\n".join(lines)
 
-    @mcp.tool()
-    def get_references_to(address: str) -> list[dict]:
+    @mcp.tool(structured_output=False)
+    def get_references_to(address: str) -> str:
         """
         Return all cross-references (XREFs) to an address.
-        Returns [{from_address, ref_type, from_function}].
+        One line per reference: `from_address  ref_type  from_function @ from_function_address`
+        (`(none)` when the reference isn't inside a function).
         """
         program = get_program()
         addr_fact = program.getAddressFactory()
@@ -229,19 +230,17 @@ def register(mcp, get_program):
         for ref in ref_mgr.getReferencesTo(addr):
             from_addr = ref.getFromAddress()
             owner = func_mgr.getFunctionContaining(from_addr)
-            results.append({
-                "from_address": str(from_addr),
-                "ref_type": str(ref.getReferenceType()),
-                "from_function": owner.getName() if owner else "(none)",
-                "from_function_address": str(owner.getEntryPoint()) if owner else "?",
-            })
-        return results
+            owner_text = f"{owner.getName()} @ {owner.getEntryPoint()}" if owner else "(none)"
+            results.append(f"{from_addr}  {ref.getReferenceType()}  {owner_text}")
+        if not results:
+            return f"No references to {address}."
+        return "\n".join(results)
 
-    @mcp.tool()
-    def get_function_calls(name_or_address: str) -> list[dict]:
+    @mcp.tool(structured_output=False)
+    def get_function_calls(name_or_address: str) -> str:
         """
         Return all functions called by the given function (direct callees).
-        Returns [{callee_name, callee_address, call_site}].
+        One line per call: `call_site -> callee_name @ callee_address`.
         """
         from ghidra_mcp.util import resolve_function
 
@@ -262,14 +261,13 @@ def register(mcp, get_program):
                 if ref.getReferenceType().isCall():
                     target = ref.getToAddress()
                     callee = func_mgr.getFunctionAt(target)
-                    results.append({
-                        "callee_name": callee.getName() if callee else "(unnamed)",
-                        "callee_address": str(target),
-                        "call_site": str(instr.getAddress()),
-                    })
-        return results
+                    callee_name = callee.getName() if callee else "(unnamed)"
+                    results.append(f"{instr.getAddress()} -> {callee_name} @ {target}")
+        if not results:
+            return f"{fn.getName()} @ {fn.getEntryPoint()} makes no direct calls."
+        return "\n".join(results)
 
-    @mcp.tool()
+    @mcp.tool(structured_output=False)
     def find_field_dispatch_callers(
         offsets: str,
         start: str = "",
@@ -357,12 +355,13 @@ def register(mcp, get_program):
             lines.append(f"  {addr}  {name}  offsets={hits}")
         return "\n".join(lines)
 
-    @mcp.tool()
-    def find_symbol(filter: str, limit: int = 100, include_dynamic: bool = False) -> list[dict]:
+    @mcp.tool(structured_output=False)
+    def find_symbol(filter: str, limit: int = 100, include_dynamic: bool = False) -> str:
         """
         Find address(es) for a label/symbol by name (the reverse of an
         address->name lookup). `filter` matches as a case-insensitive substring.
-        Returns [{name, address, type}]. Default limit 100.
+        One line per symbol: `address  name  type`. Default limit 100; says so
+        when the list was cut off.
 
         By default, Ghidra's auto-generated default labels (e.g. 'DAT_0055e190',
         'LAB_0055e190') are excluded so results stay to symbols someone actually
@@ -373,20 +372,23 @@ def register(mcp, get_program):
         sym_tbl = program.getSymbolTable()
 
         results = []
+        truncated = False
         for sym in sym_tbl.getAllSymbols(include_dynamic):
             name = sym.getName()
             if filter.lower() not in name.lower():
                 continue
-            results.append({
-                "name": name,
-                "address": str(sym.getAddress()),
-                "type": str(sym.getSymbolType()),
-            })
             if len(results) >= limit:
+                truncated = True
                 break
-        return results
+            results.append(f"{sym.getAddress()}  {name}  {sym.getSymbolType()}")
 
-    @mcp.tool()
+        if not results:
+            return f"No symbols match {filter!r}."
+        if truncated:
+            results.append(f"(showing first {limit}; narrow `filter` or raise `limit`)")
+        return "\n".join(results)
+
+    @mcp.tool(structured_output=False)
     def search_strings(query: str, max_results: int = 100) -> str:
         """
         Search for defined string data in the program whose value contains `query` (case-insensitive).

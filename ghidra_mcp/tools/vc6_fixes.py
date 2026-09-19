@@ -9,8 +9,8 @@ from __future__ import annotations
 
 def register(mcp, get_program, get_project):
 
-    @mcp.tool()
-    def fix_vc6_call_terminators(chkesp_address: str = "") -> dict:
+    @mcp.tool(structured_output=False)
+    def fix_vc6_call_terminators(chkesp_address: str = "") -> str:
         """
         Fix the __chkesp CALL_TERMINATOR problem in VC6 debug builds.
 
@@ -23,7 +23,8 @@ def register(mcp, get_program, get_project):
                    FlowType from scratch (→ UNCONDITIONAL_CALL instead of CALL_TERMINATOR).
 
         chkesp_address: hex address of __chkesp (optional — found by name if omitted).
-        Returns {extended: N, redisassembled: N, skipped: N}.
+        Returns one summary line of counts: extended, redisassembled, skipped_extend,
+        skipped_redisasm, total_call_sites.
         """
         from ghidra.program.model.address import AddressSet
         from ghidra.app.cmd.disassemble import DisassembleCommand
@@ -152,15 +153,13 @@ def register(mcp, get_program, get_project):
         if success2:
             project.save(program)
 
-        return {
-            "extended": extended,
-            "redisassembled": redisassembled,
-            "skipped_extend": skipped_extend,
-            "skipped_redisasm": skipped_redisasm,
-            "total_call_sites": len(call_sites),
-        }
+        return (
+            f"extended={extended} redisassembled={redisassembled} "
+            f"skipped_extend={skipped_extend} skipped_redisasm={skipped_redisasm} "
+            f"total_call_sites={len(call_sites)}"
+        )
 
-    @mcp.tool()
+    @mcp.tool(structured_output=False)
     def extend_function_body(function_address: str) -> str:
         """
         Extend a single function's body past a CALL __chkesp terminator.
@@ -234,7 +233,7 @@ def register(mcp, get_program, get_project):
             f"extended {extended_count}/{len(terminator_addrs)} terminator sites"
         )
 
-    @mcp.tool()
+    @mcp.tool(structured_output=False)
     def redisassemble_instruction(address: str) -> str:
         """
         Clear and re-disassemble the instruction at the given address.
