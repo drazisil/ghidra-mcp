@@ -90,6 +90,82 @@ def register(mcp, get_program):
         return "\n".join(lines)
 
     @mcp.tool(structured_output=False)
+    def get_instructions_around(address: str, before: int = 5, after: int = 5) -> str:
+        """
+        Show a window of disassembly around an address, like grep -B/-A: `before`
+        instructions ahead of it, the instruction containing it (marked `=>`),
+        and `after` instructions following -- without dumping the whole function.
+        Each line is `address  raw bytes  instruction`. A flow type is appended
+        only when it isn't plain fall-through, and a `...` line marks bytes
+        between two instructions that aren't disassembled (data or undefined).
+        Defaults 5 and 5, each capped at 200. Pass a hex address or a name; it
+        works inside a function or not, as long as an instruction is there.
+        """
+        from ghidra_mcp.util import resolve_address
+
+        max_context = 200
+        if before < 0 or after < 0:
+            raise ValueError("before and after must be 0 or greater.")
+        notes = []
+        if before > max_context:
+            notes.append(f"(before capped at {max_context}; asked for {before})")
+            before = max_context
+        if after > max_context:
+            notes.append(f"(after capped at {max_context}; asked for {after})")
+            after = max_context
+
+        program = get_program()
+        listing = program.getListing()
+        addr = resolve_address(program, address)
+        target = listing.getInstructionContaining(addr)
+        if target is None:
+            raise ValueError(
+                f"No instruction at {addr}. Use dump_bytes to see what is there; if it should be "
+                f"code, create_function or redisassemble_instruction can define it."
+            )
+
+        preceding = []
+        cur = target
+        for _ in range(before):
+            cur = cur.getPrevious()
+            if cur is None:
+                break
+            preceding.append(cur)
+        preceding.reverse()
+
+        following = []
+        cur = target
+        for _ in range(after):
+            cur = cur.getNext()
+            if cur is None:
+                break
+            following.append(cur)
+
+        def render(instr, marker: str) -> str:
+            raw = " ".join(f"{b & 0xFF:02x}" for b in instr.getBytes())
+            flow = instr.getFlowType()
+            suffix = "" if flow.isFallthrough() else f" {flow}"
+            return f"{marker} {instr.getAddress()}  {raw:<23}  {instr}{suffix}"
+
+        owner = program.getFunctionManager().getFunctionContaining(addr)
+        where = f"in {owner.getName()} @ {owner.getEntryPoint()}" if owner else "(not inside a function)"
+        header = f"{addr} {where}"
+        if not target.getAddress().equals(addr):
+            header += f"; inside the instruction starting at {target.getAddress()}"
+
+        lines = [header]
+        previous = None
+        for instr in preceding + [target] + following:
+            if previous is not None:
+                gap = instr.getAddress().getOffset() - previous.getMaxAddress().getOffset() - 1
+                if gap > 0:
+                    lines.append(f"     ... {gap} bytes not disassembled")
+            marker = "=>" if instr.getAddress().equals(target.getAddress()) else "  "
+            lines.append(render(instr, marker))
+            previous = instr
+        return "\n".join(lines + notes)
+
+    @mcp.tool(structured_output=False)
     def get_struct(name: str) -> str:
         """
         Return the layout of a named struct/typedef: offsets, field types, field names, total size.

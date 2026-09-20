@@ -139,6 +139,7 @@ mcp_servers:
 | `decompile_function` | Decompile a function to C. Pass name or hex address. |
 | `list_functions` | List functions, optionally filtered by name substring. |
 | `get_function_instructions` | List all instructions in a function with address, mnemonic, and flow type. |
+| `get_instructions_around` | Show `before`/`after` instructions around an address (default 5/5, max 200), with raw bytes and the target marked `=>` -- like `grep -B/-A`, without dumping the whole function. |
 | `get_function_calls` | Return all direct callees of a function. |
 | `get_references_to` | Return all XREFs to an address. |
 | `get_struct` | Return struct layout: offsets, field types, sizes. |
