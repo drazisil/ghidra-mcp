@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.3
+
+- Added `get_data_at(address, count=1)`: read-only view of what data type Ghidra has at an address, for `count` consecutive code units (max 1000, says so when capped). Each line is `address  length  type  value  label`; instructions show as `instruction`, undefined bytes as `undefined`, and an address in the middle of a unit reports the unit's start. Unmapped addresses raise an error with a next-step hint. Groundwork for `set_data_types`: audit a range before and after retyping it. Tests in `tests/test_get_data_at.py`.
+
 ## 0.2.2
 
 - Security: refreshed `uv.lock` to clear every advisory `pip-audit` reported against the locked dependencies (42 findings across 8 packages: `anyio`, `cryptography`, `idna`, `mcp`, `pydantic-settings`, `pyjwt`, `python-multipart`, `starlette`). Notable jumps: `cryptography` 48.0.0 -> 50.0.1, `starlette` 1.0.0 -> 1.6.0, `mcp` 1.27.1 -> 1.30.0, `anyio` 4.13.0 -> 4.15.1, `pyjwt` 2.12.1 -> 2.14.0, `python-multipart` 0.0.27 -> 0.0.32. `pip-audit` on the new lock: no known vulnerabilities.

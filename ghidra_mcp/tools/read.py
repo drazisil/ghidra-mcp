@@ -166,6 +166,55 @@ def register(mcp, get_program):
         return "\n".join(lines + notes)
 
     @mcp.tool(structured_output=False)
+    def get_data_at(address: str, count: int = 1) -> str:
+        """
+        Show the data type Ghidra has at an address, for `count` consecutive code
+        units (default 1, max 1000) -- use a larger count to audit a range.
+        Each line is `address  length  type  value  label`; the first unit is the
+        one containing the address (its start is shown if that differs), and
+        instructions are listed as `instruction`. Undefined bytes show as `undefined`.
+        Pass a hex address or a name.
+        """
+        from ghidra_mcp.util import resolve_address
+
+        max_count = 1000
+        if count < 1:
+            raise ValueError("count must be 1 or greater.")
+        notes = []
+        if count > max_count:
+            notes.append(f"(count capped at {max_count}; asked for {count})")
+            count = max_count
+
+        program = get_program()
+        listing = program.getListing()
+        symbols = program.getSymbolTable()
+        addr = resolve_address(program, address)
+        unit = listing.getCodeUnitContaining(addr)
+        if unit is None:
+            raise ValueError(
+                f"No memory at {addr}. Use list_programs / dump_bytes to check the address is inside a mapped block."
+            )
+
+        lines = []
+        if not unit.getAddress().equals(addr):
+            lines.append(f"{addr} is inside the unit starting at {unit.getAddress()}")
+        for _ in range(count):
+            if unit is None:
+                notes.append("(end of memory reached)")
+                break
+            start = unit.getAddress()
+            sym = symbols.getPrimarySymbol(start)
+            label = sym.getName() if sym is not None else ""
+            if listing.getInstructionAt(start) is not None:
+                kind, value = "instruction", str(unit)
+            else:
+                kind = unit.getDataType().getName()
+                value = unit.getDefaultValueRepresentation()
+            lines.append(f"{start}  {unit.getLength():>4}  {kind:<12}  {value}  {label}".rstrip())
+            unit = listing.getCodeUnitAfter(start)
+        return "\n".join(lines + notes)
+
+    @mcp.tool(structured_output=False)
     def get_struct(name: str) -> str:
         """
         Return the layout of a named struct/typedef: offsets, field types, field names, total size.
