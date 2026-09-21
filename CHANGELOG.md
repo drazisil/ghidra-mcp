@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.4
+
+- Added `find_field_uses(offset, start="", end="", register="", limit=100)`: every instruction with a `[register + offset]` memory operand, i.e. every use of a struct field at a known byte offset. It works on the raw displacement, so the field does not need to be defined in a struct first (`get_references_to` only sees addresses, and `find_field_dispatch_callers` only matches vtable-style dispatch). `offset` is hex or decimal and may be negative. `register` keeps only operands based on that register; `start`/`end` bound the scan (recommended on a large program, since every instruction in range is walked); output is `address  function  instruction`, capped at `limit` with a note when cut off. Immediates (`PUSH 0x14`), absolute addresses (`[0x013c5db8]`) and SIB scale factors (`[EBX+ESI*4+8]` matches 8, not 4) are not counted. Matches every struct with a field at that offset, so narrow by register or range and check the hits. No match returns an explicit message. Tests in `tests/test_find_field_uses.py` compare against an independent text oracle over the fixture and patch in instructions for the negative-offset and SIB cases.
+
 ## 0.2.3
 
 - Added `get_data_at(address, count=1)`: read-only view of what data type Ghidra has at an address, for `count` consecutive code units (max 1000, says so when capped). Each line is `address  length  type  value  label`; instructions show as `instruction`, undefined bytes as `undefined`, and an address in the middle of a unit reports the unit's start. Unmapped addresses raise an error with a next-step hint. Groundwork for `set_data_types`: audit a range before and after retyping it. Tests in `tests/test_get_data_at.py`.
