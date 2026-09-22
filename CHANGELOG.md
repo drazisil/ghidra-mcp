@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.2
+
+- Security: refreshed `uv.lock` to clear every advisory `pip-audit` reported against the locked dependencies (42 findings across 8 packages: `anyio`, `cryptography`, `idna`, `mcp`, `pydantic-settings`, `pyjwt`, `python-multipart`, `starlette`). Notable jumps: `cryptography` 48.0.0 -> 50.0.1, `starlette` 1.0.0 -> 1.6.0, `mcp` 1.27.1 -> 1.30.0, `anyio` 4.13.0 -> 4.15.1, `pyjwt` 2.12.1 -> 2.14.0, `python-multipart` 0.0.27 -> 0.0.32. `pip-audit` on the new lock: no known vulnerabilities.
+- `mcp` is now constrained to `>=1.28.1,<2` (was `>=1.26`). 1.28.1 carries the fix for the newest `mcp` advisory, and the upper bound keeps `uv lock --upgrade` from silently moving to the 2.x line, a different API that needs its own migration (`mcp` 2.x also swaps `httpx` for `httpx2`).
+- Verified with the unit suite (39 passed) in a fresh environment built from the new lock, plus a start-up check: the streamable-http server initialises under `mcp` 1.30.0.
+
 ## 0.2.1
 
 - Added `get_instructions_around(address, before=5, after=5)`: a window of disassembly around an address, like `grep -B/-A`, instead of `get_function_instructions` dumping the whole containing function (hundreds of lines for a big one) when only a few instructions are wanted. Each line is `address  raw bytes  instruction`, the instruction containing the address is marked `=>`, a flow type is shown only when it isn't plain fall-through, and a `...` line marks bytes between two instructions that aren't disassembled. An address in the middle of an instruction resolves to the instruction containing it. Counts are capped at 200 and say so. No instruction at the address raises an error that points at `dump_bytes` (data) and `create_function` / `redisassemble_instruction` (code Ghidra hasn't defined). Tests in `tests/test_instructions_around.py` run the tool through a real FastMCP instance.
