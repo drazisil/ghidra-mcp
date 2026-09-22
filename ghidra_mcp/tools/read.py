@@ -166,6 +166,158 @@ def register(mcp, get_program):
         return "\n".join(lines + notes)
 
     @mcp.tool(structured_output=False)
+    def find_field_uses(
+        offset: str, start: str = "", end: str = "", register: str = "", limit: int = 100
+    ) -> str:
+        """
+        Find every instruction that reaches a memory operand `[register + offset]`,
+        i.e. every use of a struct field at a known byte offset. Works on the raw
+        displacement, so it does not need the field to be defined in a struct.
+        `offset` is a hex or decimal byte offset ('0x14', '20', '-0x4'). `register`
+        (e.g. 'edi') keeps only operands based on that register. `start`/`end`
+        (hex addresses) bound the scan -- strongly recommended on a big program,
+        because this walks every instruction in range. Each line is
+        `address  function  instruction`. Plain immediates (`PUSH 0x14`,
+        `ADD ESP,0x14`), absolute addresses (`[0x013c5db8]`) and SIB scale factors
+        (`[EAX*0x4]`) do not count. Default limit 100; says so when the list was cut off.
+        Matches every struct with a field at that offset -- narrow with `register`
+        or a range, and check the hits.
+        """
+        from ghidra.program.model.address import AddressSet
+        from ghidra.program.model.lang import OperandType, Register
+        from ghidra.program.model.scalar import Scalar
+        from ghidra_mcp.util import resolve_address
+
+        try:
+            wanted = int(offset, 0)
+        except (TypeError, ValueError):
+            raise ValueError(
+                f"Cannot read offset {offset!r} as a number. Pass a hex or decimal byte offset "
+                f"like '0x14', '20' or '-0x4'."
+            )
+        if limit < 1:
+            raise ValueError("limit must be 1 or greater.")
+
+        program = get_program()
+        base_reg = None
+        if register:
+            base_reg = program.getLanguage().getRegister(register) or program.getLanguage().getRegister(
+                register.upper()
+            )
+            if base_reg is None:
+                raise ValueError(
+                    f"Unknown register {register!r} for this program's processor. "
+                    f"Pass a name like 'edi' or 'ESI', or leave register blank to match any base."
+                )
+
+        # A program can hold several address spaces (overlay blocks such as
+        # .debug$T), so a whole-program min..max range isn't a valid AddressSet.
+        # No bounds means "all code"; one bound means "to the end/start of its space".
+        first = resolve_address(program, start) if start else None
+        last = resolve_address(program, end) if end else None
+        if first is not None and last is not None and first.compareTo(last) > 0:
+            raise ValueError(f"start {first} is after end {last}. Swap them, or leave one blank.")
+        if first is None and last is not None:
+            first = last.getAddressSpace().getMinAddress()
+        if last is None and first is not None:
+            last = first.getAddressSpace().getMaxAddress()
+        scan = None if first is None else AddressSet(first, last)
+
+        def displacement_matches(instr, op_index: int) -> bool:
+            """True if this operand's displacement (not a SIB scale) equals `wanted`."""
+            previous = None
+            found = False
+            for part in instr.getDefaultOperandRepresentationList(op_index):
+                if isinstance(part, Scalar):
+                    scaled = isinstance(previous, str) and previous.rstrip().endswith("*")
+                    if not scaled and wanted in (part.getSignedValue(), part.getValue()):
+                        found = True
+                previous = part
+            return found
+
+        def based_on(instr, op_index: int) -> bool:
+            regs = [o for o in instr.getOpObjects(op_index) if isinstance(o, Register)]
+            if not regs:
+                return False
+            return base_reg is None or any(r.equals(base_reg) for r in regs)
+
+        listing = program.getListing()
+        func_mgr = program.getFunctionManager()
+        hits = []
+        truncated = False
+        for instr in listing.getInstructions(True) if scan is None else listing.getInstructions(scan, True):
+            for i in range(instr.getNumOperands()):
+                if not instr.getOperandType(i) & OperandType.DYNAMIC:
+                    continue
+                if displacement_matches(instr, i) and based_on(instr, i):
+                    if len(hits) == limit:
+                        truncated = True
+                        break
+                    owner = func_mgr.getFunctionContaining(instr.getAddress())
+                    where = owner.getName() if owner else "(no function)"
+                    hits.append(f"{instr.getAddress()}  {where}  {instr}")
+                    break
+            if truncated:
+                break
+
+        if not hits:
+            scope = f" in {first}..{last}" if scan is not None else ""
+            via = f" based on {base_reg.getName()}" if base_reg else ""
+            return f"No instruction{scope} uses a memory operand{via} with offset {hex(wanted)}."
+        if truncated:
+            hits.append(f"(stopped at limit {limit}; raise limit, or narrow with start/end/register)")
+        return "\n".join(hits)
+
+    @mcp.tool(structured_output=False)
+    def get_data_at(address: str, count: int = 1) -> str:
+        """
+        Show the data type Ghidra has at an address, for `count` consecutive code
+        units (default 1, max 1000) -- use a larger count to audit a range.
+        Each line is `address  length  type  value  label`; the first unit is the
+        one containing the address (its start is shown if that differs), and
+        instructions are listed as `instruction`. Undefined bytes show as `undefined`.
+        Pass a hex address or a name.
+        """
+        from ghidra_mcp.util import resolve_address
+
+        max_count = 1000
+        if count < 1:
+            raise ValueError("count must be 1 or greater.")
+        notes = []
+        if count > max_count:
+            notes.append(f"(count capped at {max_count}; asked for {count})")
+            count = max_count
+
+        program = get_program()
+        listing = program.getListing()
+        symbols = program.getSymbolTable()
+        addr = resolve_address(program, address)
+        unit = listing.getCodeUnitContaining(addr)
+        if unit is None:
+            raise ValueError(
+                f"No memory at {addr}. Use list_programs / dump_bytes to check the address is inside a mapped block."
+            )
+
+        lines = []
+        if not unit.getAddress().equals(addr):
+            lines.append(f"{addr} is inside the unit starting at {unit.getAddress()}")
+        for _ in range(count):
+            if unit is None:
+                notes.append("(end of memory reached)")
+                break
+            start = unit.getAddress()
+            sym = symbols.getPrimarySymbol(start)
+            label = sym.getName() if sym is not None else ""
+            if listing.getInstructionAt(start) is not None:
+                kind, value = "instruction", str(unit)
+            else:
+                kind = unit.getDataType().getName()
+                value = unit.getDefaultValueRepresentation()
+            lines.append(f"{start}  {unit.getLength():>4}  {kind:<12}  {value}  {label}".rstrip())
+            unit = listing.getCodeUnitAfter(start)
+        return "\n".join(lines + notes)
+
+    @mcp.tool(structured_output=False)
     def get_struct(name: str) -> str:
         """
         Return the layout of a named struct/typedef: offsets, field types, field names, total size.
