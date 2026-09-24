@@ -481,19 +481,20 @@ def register(mcp, get_program, switch_program=None):
     @mcp.tool(structured_output=False)
     def get_references_to(address: str, limit: int = 100, program: str = "") -> str:
         """
-        Return cross-references (XREFs) to an address, at most `limit` (default 100).
+        Return cross-references (XREFs) to an address or symbol name, at most `limit` (default 100).
         One line per reference: `from_address  ref_type  from_function @ from_function_address`
         (`(none)` when the reference isn't inside a function). When cut off, a
         note gives the total and the functions with the most references.
         """
+        from ghidra_mcp.util import resolve_address
+
         program = _program(program)
-        addr_fact = program.getAddressFactory()
         ref_mgr = program.getReferenceManager()
         func_mgr = program.getFunctionManager()
 
         if limit < 1:
             raise ValueError("limit must be 1 or greater.")
-        addr = addr_fact.getAddress(address)
+        addr = resolve_address(program, address)
         results = []
         total = 0
         per_owner = {}

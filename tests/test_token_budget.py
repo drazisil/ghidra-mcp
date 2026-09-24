@@ -115,6 +115,17 @@ def test_references_limit_reports_total_and_top_functions(small_program, call):
     assert "Most references:" in text[1]
 
 
+def test_references_accept_a_symbol_name(small_program, call):
+    fn = next(iter(small_program.getFunctionManager().getFunctions(True)))
+
+    by_name = call("get_references_to", address=fn.getName())
+
+    assert by_name == call("get_references_to", address=str(fn.getEntryPoint())).replace(
+        f"No references to {fn.getEntryPoint()}.", f"No references to {fn.getName()}."
+    )
+    assert "Ambiguous overloads" not in by_name
+
+
 # ── dump_bytes ─────────────────────────────────────────────────────────────
 
 def _entry(small_program):
