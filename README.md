@@ -134,21 +134,23 @@ mcp_servers:
 
 ### Read (always available)
 
+Every read tool also takes an optional `program`: it switches the active program first (and stays switched), so looking something up in another program needs no separate `switch_active_program` call. All tools reject argument names they don't declare, instead of silently ignoring them.
+
 | Tool | Description |
 |---|---|
-| `decompile_function` | Decompile a function to C. Pass name or hex address. |
+| `decompile_function` | Decompile a function to C. Pass name or hex address. Windowed: `max_lines` (default 150) from `start_line`, with a note giving the total and the next `start_line`. |
 | `list_functions` | List functions, optionally filtered by name substring. |
-| `get_function_instructions` | List all instructions in a function with address, mnemonic, and flow type. |
+| `get_function_instructions` | List a function's instructions with address, operands, and flow type. Windowed like `decompile_function` (`max_lines` default 200). |
 | `get_instructions_around` | Show `before`/`after` instructions around an address (default 5/5, max 200), with raw bytes and the target marked `=>` -- like `grep -B/-A`, without dumping the whole function. |
 | `get_data_at` | Show the data type, length, value and label of `count` consecutive code units from an address (default 1, max 1000) -- audit a range, or check what Ghidra made of a constant. |
 | `find_field_uses` | Find every instruction with a `[register + offset]` memory operand for a given byte offset (hex or decimal, negative ok) -- struct-field uses without needing the field defined. Optional `register`, `start`/`end` bounds (recommended on a big program), `limit` (default 100). Excludes immediates, absolute addresses and SIB scale factors. |
 | `get_function_calls` | Return all direct callees of a function. |
-| `get_references_to` | Return all XREFs to an address. |
+| `get_references_to` | Return XREFs to an address, up to `limit` (default 100); when cut off, says the total and which functions reference it most. |
 | `get_struct` | Return struct layout: offsets, field types, sizes. |
 | `list_structs` | List all struct data types, optionally filtered. |
-| `dump_bytes` | Hex dump a memory range with per-byte classification (INSTR/DATA/UNDEF). |
-| `find_symbol` | Find address(es) for a label/symbol by name substring (reverse of address->name lookup). |
-| `switch_active_program` | Switch the active program (must already be in the project). |
+| `dump_bytes` | Hex + ASCII dump, 16 bytes a row. `start` plus `end` (inclusive) or `length`; 64 bytes by default, capped at 4096. `classify=True` adds a per-byte I/D/U row. |
+| `find_symbol` | Find address(es) for a label/symbol by name substring (reverse of address->name lookup). Mangled labels that duplicate a listed function are left out, with a count. |
+| `switch_active_program` | Switch the active program (must already be in the project). A name that isn't found gets the closest matching program paths in the error. |
 
 ### Write
 
