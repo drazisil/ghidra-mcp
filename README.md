@@ -145,7 +145,7 @@ Every read tool also takes an optional `program`: it switches the active program
 | `get_data_at` | Show the data type, length, value and label of `count` consecutive code units from an address (default 1, max 1000) -- audit a range, or check what Ghidra made of a constant. |
 | `find_field_uses` | Find every instruction with a `[register + offset]` memory operand for a given byte offset (hex or decimal, negative ok) -- struct-field uses without needing the field defined. Optional `register`, `start`/`end` bounds (recommended on a big program), `limit` (default 100). Excludes immediates, absolute addresses and SIB scale factors. |
 | `get_function_calls` | Return all direct callees of a function. |
-| `get_references_to` | Return XREFs to an address, up to `limit` (default 100); when cut off, says the total and which functions reference it most. |
+| `get_references_to` | Return XREFs to an address, up to `limit` (default 100); when cut off, says the total and which functions reference it more than once. |
 | `get_struct` | Return struct layout: offsets, field types, sizes. |
 | `list_structs` | List all struct data types, optionally filtered. |
 | `dump_bytes` | Hex + ASCII dump, 16 bytes a row. `start` plus `end` (inclusive) or `length`; 64 bytes by default, capped at 4096. `classify=True` adds a per-byte I/D/U row. |

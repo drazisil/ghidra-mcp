@@ -484,7 +484,7 @@ def register(mcp, get_program, switch_program=None):
         Return cross-references (XREFs) to an address or symbol name, at most `limit` (default 100).
         One line per reference: `from_address  ref_type  from_function @ from_function_address`
         (`(none)` when the reference isn't inside a function). When cut off, a
-        note gives the total and the functions with the most references.
+        note gives the total and which functions reference it more than once.
         """
         from ghidra_mcp.util import resolve_address
 
@@ -509,10 +509,11 @@ def register(mcp, get_program, switch_program=None):
         if not results:
             return f"No references to {address}."
         if total > limit:
-            top = sorted(per_owner.items(), key=lambda kv: -kv[1])[:10]
+            top = [kv for kv in sorted(per_owner.items(), key=lambda kv: -kv[1])[:10] if kv[1] > 1]
+            most = (" Most references: " + ", ".join(f"{name} x{n}" for name, n in top) + ".") if top else ""
             results.append(
-                f"(first {limit} of {total} references shown, from {len(per_owner)} functions; raise `limit` for more. "
-                f"Most references: " + ", ".join(f"{name} x{n}" for name, n in top) + ")"
+                f"(first {limit} of {total} references shown, from {len(per_owner)} functions; "
+                f"raise `limit` for more.{most})"
             )
         return "\n".join(results)
 

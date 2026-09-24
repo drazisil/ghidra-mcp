@@ -110,9 +110,16 @@ def test_references_limit_reports_total_and_top_functions(small_program, call):
 
     text = call("get_references_to", address=str(target), limit=1).splitlines()
 
+    owners = {}
+    for ref in ref_mgr.getReferencesTo(target):
+        fn = small_program.getFunctionManager().getFunctionContaining(ref.getFromAddress())
+        key = str(fn.getEntryPoint()) if fn else None
+        owners[key] = owners.get(key, 0) + 1
+
     assert len(text) == 2
-    assert text[1].startswith(f"(first 1 of {total} references shown")
-    assert "Most references:" in text[1]
+    assert text[1].startswith(f"(first 1 of {total} references shown, from {len(owners)} functions")
+    # Only functions with repeat references are worth naming.
+    assert ("Most references:" in text[1]) == (max(owners.values()) > 1)
 
 
 def test_references_accept_a_symbol_name(small_program, call):
