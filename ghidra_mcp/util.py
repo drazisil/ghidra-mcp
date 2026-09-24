@@ -50,11 +50,46 @@ def resolve_function(program, name_or_address: str):
         fn = func_mgr.getFunctionContaining(addr)
     if fn is None:
         raise ValueError(
-            f"No function at {addr} (from {name_or_address!r}). If this is live code Ghidra "
-            f"never bound to a function (e.g. a jump-table target), call create_function('{addr}') "
-            f"first, then retry. To check what is there, use dump_bytes."
+            f"No function at {addr} (from {name_or_address!r}). {_nearest_functions(func_mgr, addr)}"
+            f"If this is live code Ghidra never bound to a function (e.g. a jump-table target), "
+            f"call create_function('{addr}') first, then retry. To look at the code without a "
+            f"function, use get_instructions_around('{addr}'); for bytes, dump_bytes."
         )
     return fn
+
+
+def _nearest_functions(func_mgr, addr) -> str:
+    """Name the closest function on each side of `addr`, so a miss says where to look next."""
+    parts = []
+    before = func_mgr.getFunctions(addr, False)
+    if before.hasNext():
+        fn = before.next()
+        parts.append(f"nearest before: {fn.getName()} @ {fn.getEntryPoint()} (ends {fn.getBody().getMaxAddress()})")
+    after = func_mgr.getFunctions(addr, True)
+    if after.hasNext():
+        fn = after.next()
+        parts.append(f"nearest after: {fn.getName()} @ {fn.getEntryPoint()}")
+    return ("; ".join(parts) + ". ") if parts else ""
+
+
+def forbid_extra_arguments(mcp) -> None:
+    """
+    Make every registered tool reject argument names it doesn't declare.
+
+    FastMCP's argument models ignore unknown keys by default, so a call like
+    find_symbol(query="X", filter="function") silently dropped `query` and ran
+    a search nobody asked for. Call this after every tool is registered.
+    """
+    for tool in mcp._tool_manager.list_tools():
+        base = tool.fn_metadata.arg_model
+        strict = type(base.__name__, (base,), {"model_config": {**base.model_config, "extra": "forbid"}})
+        tool.fn_metadata.arg_model = strict
+        tool.parameters["additionalProperties"] = False
+
+
+def truncation_note(shown_from: int, shown_to: int, total: int, unit: str, how: str) -> str:
+    """One trailing line telling the caller the output was cut and how to get the rest."""
+    return f"({unit} {shown_from}-{shown_to} of {total} shown; {how})"
 
 
 def clear_range(program, start_addr, end_addr):
@@ -74,3 +109,19 @@ def is_ret(instruction) -> bool:
         return False
     mnemonic = instruction.getMnemonicString().upper()
     return mnemonic in ("RET", "RETN", "RETF")
+
+
+def suggest_program_paths(name: str, paths: list[str]) -> str:
+    """Closest program paths to a name that didn't open, so the retry needs no list_programs call."""
+    import difflib
+
+    by_base = {}
+    for path in paths:
+        by_base.setdefault(path.rsplit("/", 1)[-1].lower(), path)
+    wanted = name.rsplit("/", 1)[-1].lower()
+    close = [p for p in paths if p.lower() == name.lower() or p.rsplit("/", 1)[-1].lower() == wanted]
+    close += [by_base[b] for b in difflib.get_close_matches(wanted, list(by_base), n=5, cutoff=0.5)]
+    close = list(dict.fromkeys(close))
+    if close:
+        return "Did you mean: " + ", ".join(close) + "? (names are case-sensitive; nested programs need their folder path)"
+    return f"The project has {len(paths)} programs; list_programs shows them."

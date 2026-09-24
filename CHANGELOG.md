@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.3.0
+
+Output budgets, from an audit of 3,344 real tool calls across 34 sessions: decompiles were 53% of all tool-output text (p99 38k chars), and a result stays in the conversation, re-read on every later turn, until it's compacted.
+
+- `decompile_function` and `get_function_instructions` are windowed: `max_lines` (150 and 200 by default) starting at `start_line` (1-based). When anything is left out, a last line says so -- `(lines 1-150 of 612 shown; next: start_line=151)` -- and a `start_line` past the end is an error. **Behavior change:** a long function no longer comes back whole by default; pass a large `max_lines` for that.
+- `get_references_to(address, limit=100)`: capped (the largest real result was 43k chars). When cut off, a note gives the total, how many functions the references come from, and (when any function has more than one) the ten with the most.
+- `get_references_to` accepts a symbol name as well as an address. A name used to reach Ghidra as `None` and fail with a Java "Ambiguous overloads ... getReferencesTo(NoneType)" error (9 times in the audit).
+- `dump_bytes` rewritten. **Behavior change:** 16 bytes a row as `address  hex  ascii`, without the per-byte INSTR/DATA/UNDEF labels that made each line about 3x longer; `classify=True` puts them back as a compact I/D/./U row. The range can be `end` (inclusive, as before) or `length`, and defaults to 64 bytes; it's capped at 4096 with a note saying where to continue. `start`/`end` now also accept symbol names.
+- `find_symbol` leaves out a mangled label (`?Foo@@...`) at the same address as a function that also matched, with a count of how many. In one real result, 62% of lines were these duplicates.
+- Every tool now rejects argument names it doesn't declare. FastMCP ignored them, so `find_symbol(query="X", filter="function")` dropped `query` and returned 101 lines of symbols containing "function".
+- Every read tool takes an optional `program`: it switches the active program first (sticky, same as `switch_active_program`), so a lookup in another program is one call instead of two. The audit found 236 switch calls, 57 of them back-and-forth A->B->A switches.
+- `switch_active_program` with a name that isn't in the project now fails with the closest matching paths (case and folder mismatches included) instead of a Java `FileNotFoundException`.
+- "No function at X" now names the nearest function before (with its end address) and after, and points at `get_instructions_around` for looking at code with no function.
+- Tests in `tests/test_token_budget.py` (17) run the tools through a real FastMCP instance against the fixture.
+
 ## 0.2.5
 
 - Fixed `apply_struct_member`: it rejected every struct that actually lived in a program, because the check tested `isinstance(struct_dt, StructureDataType)` -- `StructureDataType` is only Ghidra's in-memory builder class used before a struct is resolved into a data type manager; once resolved (including right after `create_struct`), Ghidra hands structs back as `StructureDB`, which does not subclass it. Both implement the `Structure` interface, so the check now tests against that instead, matching what `get_struct`/`list_structs` already did. Regression test in `tests/test_error_hints.py` creates a struct and applies a member to it (the previously-broken path); the rest of that module intentionally forbids `project.save`, so this test registers its own fixture that allows it.

@@ -101,6 +101,9 @@ def get_project():
     return _project
 
 
+from ghidra_mcp.util import suggest_program_paths  # noqa: E402
+
+
 def switch_program(name: str) -> str:
     """Open (or reuse) a program by filename and make it the active program.
 
@@ -120,7 +123,13 @@ def switch_program(name: str) -> str:
         folder_path = "/" + folder_path
     else:
         folder_path, prog_name = "/", name
-    opened = _project.openProgram(folder_path, prog_name, False)
+    try:
+        opened = _project.openProgram(folder_path, prog_name, False)
+    except Exception as e:
+        if "FileNotFound" not in type(e).__name__ and "FileNotFound" not in str(e):
+            raise
+        hint = suggest_program_paths(name, _list_domain_files(_project.getRootFolder()))
+        raise ValueError(f"No program {name!r} in project {_project_name!r}. {hint}") from e
     _open_programs[name] = opened
     _program = opened
     return f"Opened and switched to: {name}"
@@ -187,7 +196,11 @@ mcp = FastMCP(
         "Use list_projects to see available projects, switch_active_project or create_project to open one, "
         "then list_programs and switch_active_program to load a program. "
         "Function names are case-sensitive. "
-        "Write tools are available and create their own transactions."
+        "Write tools are available and create their own transactions. "
+        "Every read tool takes an optional `program` argument that switches the active program "
+        "first (it stays switched), so a lookup in another program needs no separate switch call. "
+        "Large outputs are windowed: decompile_function and get_function_instructions take "
+        "start_line/max_lines, get_references_to takes limit, and each says when it cut something off."
     ),
     host=_mcp_host,
     port=_mcp_port,
@@ -196,7 +209,7 @@ mcp = FastMCP(
 
 from ghidra_mcp.tools import read, write, vc6_fixes, pdb_tools  # noqa: E402
 
-read.register(mcp, get_program)
+read.register(mcp, get_program, switch_program)
 write.register(mcp, get_program, get_project)
 vc6_fixes.register(mcp, get_program, get_project)
 pdb_tools.register(mcp, get_program, get_project)
@@ -369,6 +382,12 @@ def list_projects() -> str:
     if not gprs:
         return f"No projects found in {_PROJECT_PATH}."
     return "\n".join(os.path.splitext(os.path.basename(p))[0] for p in sorted(gprs))
+
+
+from ghidra_mcp.util import forbid_extra_arguments  # noqa: E402
+
+# Registered last so it covers every tool above.
+forbid_extra_arguments(mcp)
 
 
 if __name__ == "__main__":

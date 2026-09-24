@@ -9,20 +9,55 @@ if TYPE_CHECKING:
     pass
 
 
-def register(mcp, get_program):
-    """Register all read tools onto the FastMCP instance."""
+def _window(lines: list[str], start_line: int, max_lines: int, unit: str) -> str:
+    """Return lines[start_line-1 : start_line-1+max_lines], plus a note when anything was left out."""
+    from ghidra_mcp.util import truncation_note
+
+    if start_line < 1:
+        raise ValueError("start_line must be 1 or greater.")
+    if max_lines < 1:
+        raise ValueError("max_lines must be 1 or greater.")
+    total = len(lines)
+    if total and start_line > total:
+        raise ValueError(f"start_line {start_line} is past the end ({total} {unit}).")
+    end = min(total, start_line - 1 + max_lines)
+    shown = lines[start_line - 1:end]
+    if start_line > 1 or end < total:
+        how = f"next: start_line={end + 1}" if end < total else "this is the end"
+        shown.append(truncation_note(start_line, end, total, unit, how))
+    return "\n".join(shown)
+
+
+def register(mcp, get_program, switch_program=None):
+    """
+    Register all read tools onto the FastMCP instance.
+
+    `switch_program(name)` backs each tool's optional `program` argument; when
+    it's None (tests), passing `program` is an error.
+    """
+
+    def _program(program: str):
+        if program:
+            if switch_program is None:
+                raise ValueError("Per-call `program` isn't available here; call switch_active_program instead.")
+            switch_program(program)
+        return get_program()
 
     @mcp.tool(structured_output=False)
-    def decompile_function(name_or_address: str) -> str:
+    def decompile_function(name_or_address: str, start_line: int = 1, max_lines: int = 150, program: str = "") -> str:
         """
         Decompile a function and return the C source.
         Pass a function name (e.g. 'GameSetup_Init') or hex address (e.g. '0055e190').
+        Returns at most `max_lines` lines (default 150) starting at `start_line`
+        (1-based); a trailing note gives the total and the next start_line when
+        more remains. Large functions are better read in windows, or around one
+        address with get_instructions_around.
         """
         from ghidra.app.decompiler import DecompInterface
         from ghidra.util.task import ConsoleTaskMonitor
         from ghidra_mcp.util import resolve_function
 
-        program = get_program()
+        program = _program(program)
         fn = resolve_function(program, name_or_address)
 
         ifc = DecompInterface()
@@ -30,7 +65,8 @@ def register(mcp, get_program):
         try:
             result = ifc.decompileFunction(fn, 60, ConsoleTaskMonitor())
             if result.decompileCompleted():
-                return result.getDecompiledFunction().getC()
+                return _window(result.getDecompiledFunction().getC().strip("\n").splitlines(),
+                               start_line, max_lines, "lines")
             raise ValueError(
                 f"Decompile of {fn.getName()} @ {fn.getEntryPoint()} failed: {result.getErrorMessage()}. "
                 f"Inspect the raw instructions with get_function_instructions; if the body is cut off "
@@ -41,13 +77,13 @@ def register(mcp, get_program):
             ifc.dispose()
 
     @mcp.tool(structured_output=False)
-    def list_functions(filter: str = "", limit: int = 100) -> str:
+    def list_functions(filter: str = "", limit: int = 100, program: str = "") -> str:
         """
         List functions, optionally filtered by a substring of the name.
         One line per function: `address  name  size`. Default limit 100; says so
         when the list was cut off.
         """
-        program = get_program()
+        program = _program(program)
         func_mgr = program.getFunctionManager()
 
         results = []
@@ -68,29 +104,33 @@ def register(mcp, get_program):
         return "\n".join(results)
 
     @mcp.tool(structured_output=False)
-    def get_function_instructions(name_or_address: str) -> str:
+    def get_function_instructions(name_or_address: str, start_line: int = 1, max_lines: int = 200, program: str = "") -> str:
         """
-        List all instructions in a function with address, mnemonic, operands, and
+        List a function's instructions with address, mnemonic, operands, and
         flow type (flow type is shown only when it isn't plain fall-through).
-        Pass a function name or hex address.
+        Pass a function name or hex address. Returns at most `max_lines`
+        instructions (default 200) starting at the `start_line`-th (1-based),
+        with a note when more remain. For a few instructions around one address,
+        get_instructions_around is cheaper.
         """
         from ghidra_mcp.util import resolve_function
 
-        program = get_program()
+        program = _program(program)
         fn = resolve_function(program, name_or_address)
         listing = program.getListing()
 
-        lines = [f"{fn.getName()} @ {fn.getEntryPoint()}"]
+        lines = []
         body = fn.getBody()
         instr_iter = listing.getInstructions(body, True)
         for instr in instr_iter:
             flow = instr.getFlowType()
             suffix = "" if flow.isFallthrough() else f" {flow}"
             lines.append(f"  {instr.getAddress()}  {instr}{suffix}")
-        return "\n".join(lines)
+        header = f"{fn.getName()} @ {fn.getEntryPoint()}"
+        return header + "\n" + _window(lines, start_line, max_lines, "instructions")
 
     @mcp.tool(structured_output=False)
-    def get_instructions_around(address: str, before: int = 5, after: int = 5) -> str:
+    def get_instructions_around(address: str, before: int = 5, after: int = 5, program: str = "") -> str:
         """
         Show a window of disassembly around an address, like grep -B/-A: `before`
         instructions ahead of it, the instruction containing it (marked `=>`),
@@ -114,7 +154,7 @@ def register(mcp, get_program):
             notes.append(f"(after capped at {max_context}; asked for {after})")
             after = max_context
 
-        program = get_program()
+        program = _program(program)
         listing = program.getListing()
         addr = resolve_address(program, address)
         target = listing.getInstructionContaining(addr)
@@ -167,7 +207,7 @@ def register(mcp, get_program):
 
     @mcp.tool(structured_output=False)
     def find_field_uses(
-        offset: str, start: str = "", end: str = "", register: str = "", limit: int = 100
+        offset: str, start: str = "", end: str = "", register: str = "", limit: int = 100, program: str = ""
     ) -> str:
         """
         Find every instruction that reaches a memory operand `[register + offset]`,
@@ -198,7 +238,7 @@ def register(mcp, get_program):
         if limit < 1:
             raise ValueError("limit must be 1 or greater.")
 
-        program = get_program()
+        program = _program(program)
         base_reg = None
         if register:
             base_reg = program.getLanguage().getRegister(register) or program.getLanguage().getRegister(
@@ -269,7 +309,7 @@ def register(mcp, get_program):
         return "\n".join(hits)
 
     @mcp.tool(structured_output=False)
-    def get_data_at(address: str, count: int = 1) -> str:
+    def get_data_at(address: str, count: int = 1, program: str = "") -> str:
         """
         Show the data type Ghidra has at an address, for `count` consecutive code
         units (default 1, max 1000) -- use a larger count to audit a range.
@@ -288,7 +328,7 @@ def register(mcp, get_program):
             notes.append(f"(count capped at {max_count}; asked for {count})")
             count = max_count
 
-        program = get_program()
+        program = _program(program)
         listing = program.getListing()
         symbols = program.getSymbolTable()
         addr = resolve_address(program, address)
@@ -318,14 +358,14 @@ def register(mcp, get_program):
         return "\n".join(lines + notes)
 
     @mcp.tool(structured_output=False)
-    def get_struct(name: str) -> str:
+    def get_struct(name: str, program: str = "") -> str:
         """
         Return the layout of a named struct/typedef: offsets, field types, field names, total size.
         """
         from java.util import ArrayList
         from ghidra.program.model.data import Structure, TypedefDataType
 
-        program = get_program()
+        program = _program(program)
         dtm = program.getDataTypeManager()
 
         results = ArrayList()
@@ -352,14 +392,14 @@ def register(mcp, get_program):
         return "\n".join(lines)
 
     @mcp.tool(structured_output=False)
-    def list_structs(filter: str = "") -> str:
+    def list_structs(filter: str = "", program: str = "") -> str:
         """
         List all struct data types, optionally filtered by name substring.
         One line per struct, sorted by name: `name  size  category`.
         """
         from ghidra.program.model.data import Structure
 
-        program = get_program()
+        program = _program(program)
         dtm = program.getDataTypeManager()
 
         results = []
@@ -375,104 +415,117 @@ def register(mcp, get_program):
         return "\n".join(line for _, line in sorted(results))
 
     @mcp.tool(structured_output=False)
-    def dump_bytes(start: str, end: str) -> str:
+    def dump_bytes(start: str, end: str = "", length: int = 0, classify: bool = False, program: str = "") -> str:
         """
-        Hex dump a memory range with per-byte classification (INSTR/DATA/UNDEF).
-        Pass hex addresses for start and end (inclusive).
+        Hex dump a memory range, 16 bytes per row: `address  hex bytes  ascii`.
+        Give the range as `start` plus either `end` (inclusive) or `length` in
+        bytes; with neither, 64 bytes are shown. Capped at 4096 bytes, with a note.
+        `classify=True` adds a row under each line marking every byte I
+        (instruction start), D (data start), . (inside the unit before),
+        U (undefined) -- roughly doubles the output; get_data_at usually says the
+        same more cheaply. Unreadable bytes show as `??`.
         """
-        program = get_program()
-        addr_fact = program.getAddressFactory()
+        from ghidra_mcp.util import resolve_address
+
+        max_bytes = 4096
+        program = _program(program)
         listing = program.getListing()
         memory = program.getMemory()
 
-        start_addr = addr_fact.getAddress(start)
-        end_addr = addr_fact.getAddress(end)
+        start_addr = resolve_address(program, start)
+        if end and length:
+            raise ValueError("Pass `end` or `length`, not both.")
+        if end:
+            end_addr = resolve_address(program, end)
+            if end_addr.compareTo(start_addr) < 0:
+                raise ValueError(f"end {end_addr} is before start {start_addr}.")
+            count = end_addr.subtract(start_addr) + 1
+        elif length:
+            if length < 1:
+                raise ValueError("length must be 1 or greater.")
+            count = length
+        else:
+            count = 64
+        notes = []
+        if count > max_bytes:
+            notes.append(f"(capped at {max_bytes} bytes; asked for {count}. Continue from {start_addr.add(max_bytes)})")
+            count = max_bytes
+
+        def classify_at(addr) -> str:
+            if listing.getCodeUnitAt(addr) is None:
+                return "." if listing.getCodeUnitContaining(addr) is not None else "U"
+            return "I" if listing.getInstructionAt(addr) is not None else "D"
 
         lines = []
-        addr = start_addr
-        row_bytes = []
-        row_labels = []
-        row_start = addr
-
-        def flush_row():
-            if not row_bytes:
-                return
-            hex_part = " ".join(f"{b:02x}" for b in row_bytes)
-            label_part = " ".join(f"{l:>4}" for l in row_labels)
-            lines.append(f"{row_start}  {hex_part:<48}  {label_part}")
-
-        while addr <= end_addr:
-            try:
-                b = memory.getByte(addr) & 0xFF
-            except Exception:
-                b = 0
-                row_bytes.append(b)
-                row_labels.append("????")
-                addr = addr.add(1)
-                if len(row_bytes) == 8:
-                    flush_row()
-                    row_bytes = []
-                    row_labels = []
-                    row_start = addr
-                continue
-
-            cu = listing.getCodeUnitAt(addr)
-            if cu is None:
-                label = "UNDEF"
-            else:
-                cu_type = type(cu).__name__
-                if "Instruction" in cu_type:
-                    label = "INSTR"
-                elif "Data" in cu_type:
-                    label = "DATA"
-                else:
-                    label = "???"
-
-            row_bytes.append(b)
-            row_labels.append(label)
-            addr = addr.add(1)
-
-            if len(row_bytes) == 8:
-                flush_row()
-                row_bytes = []
-                row_labels = []
-                row_start = addr
-
-        flush_row()
-        return "\n".join(lines)
+        for row in range(0, count, 16):
+            row_addr = start_addr.add(row)
+            hex_cells, ascii_cells, kinds = [], [], []
+            for k in range(min(16, count - row)):
+                a = row_addr.add(k)
+                try:
+                    b = memory.getByte(a) & 0xFF
+                except Exception:
+                    hex_cells.append("??")
+                    ascii_cells.append(" ")
+                    kinds.append("?")
+                    continue
+                hex_cells.append(f"{b:02x}")
+                ascii_cells.append(chr(b) if 0x20 <= b < 0x7F else ".")
+                if classify:
+                    kinds.append(classify_at(a))
+            lines.append(f"{row_addr}  {' '.join(hex_cells):<47}  {''.join(ascii_cells)}")
+            if classify:
+                lines.append(f"{'':{len(str(row_addr))}}  {'  '.join(kinds)}")
+        return "\n".join(lines + notes)
 
     @mcp.tool(structured_output=False)
-    def get_references_to(address: str) -> str:
+    def get_references_to(address: str, limit: int = 100, program: str = "") -> str:
         """
-        Return all cross-references (XREFs) to an address.
+        Return cross-references (XREFs) to an address or symbol name, at most `limit` (default 100).
         One line per reference: `from_address  ref_type  from_function @ from_function_address`
-        (`(none)` when the reference isn't inside a function).
+        (`(none)` when the reference isn't inside a function). When cut off, a
+        note gives the total and which functions reference it more than once.
         """
-        program = get_program()
-        addr_fact = program.getAddressFactory()
+        from ghidra_mcp.util import resolve_address
+
+        program = _program(program)
         ref_mgr = program.getReferenceManager()
         func_mgr = program.getFunctionManager()
 
-        addr = addr_fact.getAddress(address)
+        if limit < 1:
+            raise ValueError("limit must be 1 or greater.")
+        addr = resolve_address(program, address)
         results = []
+        total = 0
+        per_owner = {}
         for ref in ref_mgr.getReferencesTo(addr):
+            total += 1
             from_addr = ref.getFromAddress()
             owner = func_mgr.getFunctionContaining(from_addr)
             owner_text = f"{owner.getName()} @ {owner.getEntryPoint()}" if owner else "(none)"
-            results.append(f"{from_addr}  {ref.getReferenceType()}  {owner_text}")
+            per_owner[owner_text] = per_owner.get(owner_text, 0) + 1
+            if len(results) < limit:
+                results.append(f"{from_addr}  {ref.getReferenceType()}  {owner_text}")
         if not results:
             return f"No references to {address}."
+        if total > limit:
+            top = [kv for kv in sorted(per_owner.items(), key=lambda kv: -kv[1])[:10] if kv[1] > 1]
+            most = (" Most references: " + ", ".join(f"{name} x{n}" for name, n in top) + ".") if top else ""
+            results.append(
+                f"(first {limit} of {total} references shown, from {len(per_owner)} functions; "
+                f"raise `limit` for more.{most})"
+            )
         return "\n".join(results)
 
     @mcp.tool(structured_output=False)
-    def get_function_calls(name_or_address: str) -> str:
+    def get_function_calls(name_or_address: str, program: str = "") -> str:
         """
         Return all functions called by the given function (direct callees).
         One line per call: `call_site -> callee_name @ callee_address`.
         """
         from ghidra_mcp.util import resolve_function
 
-        program = get_program()
+        program = _program(program)
         fn = resolve_function(program, name_or_address)
         ref_mgr = program.getReferenceManager()
         func_mgr = program.getFunctionManager()
@@ -501,6 +554,7 @@ def register(mcp, get_program):
         start: str = "",
         end: str = "",
         timeout: int = 20,
+        program: str = "",
     ) -> str:
         """
         Bulk-scan decompiled function bodies for indirect calls dispatched through
@@ -538,7 +592,7 @@ def register(mcp, get_program):
         offset_patterns = [(o, re.compile(r"(?<![0-9a-fA-Fx])0x%x\b" % o)) for o in offset_list]
         indirect_call_pattern = re.compile(r"\(\*\*\(code \*\*\)")
 
-        program = get_program()
+        program = _program(program)
         func_mgr = program.getFunctionManager()
         addr_fact = program.getAddressFactory()
 
@@ -584,46 +638,61 @@ def register(mcp, get_program):
         return "\n".join(lines)
 
     @mcp.tool(structured_output=False)
-    def find_symbol(filter: str, limit: int = 100, include_dynamic: bool = False) -> str:
+    def find_symbol(filter: str, limit: int = 100, include_dynamic: bool = False, program: str = "") -> str:
         """
         Find address(es) for a label/symbol by name (the reverse of an
         address->name lookup). `filter` matches as a case-insensitive substring.
         One line per symbol: `address  name  type`. Default limit 100; says so
-        when the list was cut off.
+        when the list was cut off. A mangled label sitting at the same address
+        as a matching function (e.g. `?Foo@@YAXXZ` next to `Foo`) is left out,
+        with a count of how many were.
 
         By default, Ghidra's auto-generated default labels (e.g. 'DAT_0055e190',
         'LAB_0055e190') are excluded so results stay to symbols someone actually
         named -- user-defined labels, imports, exports, functions. Pass
         include_dynamic=True to also search those default names.
         """
-        program = get_program()
+        program = _program(program)
         sym_tbl = program.getSymbolTable()
 
+        from ghidra.program.model.symbol import SymbolType
+
+        func_mgr = program.getFunctionManager()
+        needle = filter.lower()
         results = []
+        folded = 0
         truncated = False
         for sym in sym_tbl.getAllSymbols(include_dynamic):
             name = sym.getName()
-            if filter.lower() not in name.lower():
+            if needle not in name.lower():
                 continue
+            addr = sym.getAddress()
+            if sym.getSymbolType() == SymbolType.LABEL and name.startswith("?"):
+                fn = func_mgr.getFunctionAt(addr)
+                if fn is not None and needle in fn.getName().lower():
+                    folded += 1
+                    continue
             if len(results) >= limit:
                 truncated = True
                 break
-            results.append(f"{sym.getAddress()}  {name}  {sym.getSymbolType()}")
+            results.append(f"{addr}  {name}  {sym.getSymbolType()}")
 
         if not results:
             return f"No symbols match {filter!r}."
         if truncated:
             results.append(f"(showing first {limit}; narrow `filter` or raise `limit`)")
+        if folded:
+            results.append(f"({folded} mangled label(s) at the same address as a listed function omitted)")
         return "\n".join(results)
 
     @mcp.tool(structured_output=False)
-    def search_strings(query: str, max_results: int = 100) -> str:
+    def search_strings(query: str, max_results: int = 100, program: str = "") -> str:
         """
         Search for defined string data in the program whose value contains `query` (case-insensitive).
         Returns up to `max_results` matches as 'address: value' lines.
         Pass query='' to list all defined strings (up to max_results).
         """
-        program = get_program()
+        program = _program(program)
         needle = query.lower()
         results = []
 
