@@ -106,3 +106,37 @@ def test_apply_struct_member_unknown_struct_hints_list_structs(tools):
     message = str(exc.value)
     assert "list_structs" in message
     assert "create_struct" in message
+
+
+def test_apply_struct_member_accepts_a_resolved_struct(small_program):
+    # create_struct resolves the new struct into the program's data type
+    # manager, which hands it back as StructureDB rather than the in-memory
+    # StructureDataType builder class -- apply_struct_member must accept
+    # that too (regression: it used to reject every already-resolved struct).
+    # Needs its own fixture (not `tools` above): that one forbids
+    # project.save, but these two tools save on success.
+    from ghidra_mcp.tools import read, write
+
+    mcp = _CapturingMCP()
+
+    def get_program():
+        return small_program
+
+    class _SaveableProject:
+        def save(self, program):
+            pass
+
+    def get_project():
+        return _SaveableProject()
+
+    read.register(mcp, get_program)
+    write.register(mcp, get_program, get_project)
+    tools = mcp.tools
+
+    tools["create_struct"]("RegressionStruct", 8)
+    tools["create_struct"]("RegressionMember", 4)
+
+    tools["apply_struct_member"]("RegressionStruct", 0, "RegressionMember", "field0")
+
+    listing = tools["get_struct"]("RegressionStruct")
+    assert "field0" in listing
