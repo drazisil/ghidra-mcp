@@ -168,7 +168,7 @@ def register(mcp, get_program, get_project):
         Example: apply_struct_member('cNPS_GameServer', 1760, 'cUserList', 'mUserList_Added')
         """
         from java.util import ArrayList
-        from ghidra.program.model.data import StructureDataType, TypedefDataType
+        from ghidra.program.model.data import Structure, TypedefDataType
 
         program = get_program()
         project = get_project()
@@ -185,7 +185,10 @@ def register(mcp, get_program, get_project):
         struct_dt = struct_results[0]
         while isinstance(struct_dt, TypedefDataType):
             struct_dt = struct_dt.getDataType()
-        if not isinstance(struct_dt, StructureDataType):
+        # Structs already resolved into the program come back as StructureDB, not
+        # StructureDataType (the latter is only the in-memory pre-resolve builder).
+        # Both implement the Structure interface, so check against that instead.
+        if not isinstance(struct_dt, Structure):
             raise ValueError(f"{struct_name!r} is a {type(struct_dt).__name__}, not a struct.")
 
         # Resolve member type
