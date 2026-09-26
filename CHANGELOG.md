@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.4.0
+
+Typing C++ vtables, so a virtual call decompiles as `obj->vftable->Method(obj, ...)` instead of `(**(code **)(*(int *)obj + 0x18))(...)`. Before this, none of the three steps could be done through the MCP.
+
+- `apply_struct_member` takes pointer and array types: `type_name` is a type name followed by any number of `*` and `[N]` suffixes, applied left to right (`Foo *`, `char[16]`, `Foo *[4]`, `MyFuncDef *`). It used to look the whole string up by exact name, so any pointer type that didn't already exist in the program failed with "Member type not found". The base name also falls back to Ghidra's built-in types, so `int`/`char`/`uint` work before the program uses them.
+- Added `resize_struct(name, size)`: change a struct's total size, keeping its fields. Growing appends undefined bytes; shrinking is refused, naming the fields, if it would cut a defined one. Meant for the 1-byte `/Demangler` placeholder classes, which no tool could resize before; an empty struct (which Ghidra reports as length 1) lands on exactly the requested size.
+- Added `create_function_definition(name, from_function="", signature="", calling_convention="", category="/")`: a function-signature data type, copied from an existing function (return type, parameters, calling convention) or parsed from a C declaration plus a separate calling convention, for typing function-pointer fields such as vtable slots. An unknown calling convention lists the valid ones; an existing type with the same name is refused.
+- Tests in `tests/test_type_tools.py` (14), run through a real FastMCP instance against the fixture.
+
 ## 0.3.0
 
 Output budgets, from an audit of 3,344 real tool calls across 34 sessions: decompiles were 53% of all tool-output text (p99 38k chars), and a result stays in the conversation, re-read on every later turn, until it's compacted.

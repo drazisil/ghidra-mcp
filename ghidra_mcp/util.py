@@ -125,3 +125,55 @@ def suggest_program_paths(name: str, paths: list[str]) -> str:
     if close:
         return "Did you mean: " + ", ".join(close) + "? (names are case-sensitive; nested programs need their folder path)"
     return f"The project has {len(paths)} programs; list_programs shows them."
+
+
+def resolve_data_type(dtm, type_name: str):
+    """
+    Resolve a C-style type name to a Ghidra DataType: a named type, optionally
+    followed by any number of `*` (pointer) and `[N]` (array) suffixes, applied
+    left to right -- `Foo *`, `char[16]`, `Foo *[4]` (array of 4 pointers).
+
+    The base name is looked up in the program's data type manager, then in the
+    built-in types (so `int`, `uint`, `char` work before the program uses them).
+    Pointers get the program's default pointer size.
+    """
+    import re
+    from java.util import ArrayList
+    from ghidra.program.model.data import ArrayDataType, BuiltInDataTypeManager, PointerDataType
+
+    text = type_name.strip()
+    suffixes = []
+    while True:
+        if text.endswith("*"):
+            suffixes.append("*")
+            text = text[:-1].rstrip()
+            continue
+        m = re.search(r"\[\s*(\d+)\s*\]$", text)
+        if m:
+            suffixes.append(int(m.group(1)))
+            text = text[: m.start()].rstrip()
+            continue
+        break
+    suffixes.reverse()
+
+    if not text:
+        raise ValueError(f"Type {type_name!r} has no base type name.")
+    results = ArrayList()
+    dtm.findDataTypes(text, results)
+    if results.isEmpty():
+        BuiltInDataTypeManager.getDataTypeManager().findDataTypes(text, results)
+    if results.isEmpty():
+        raise ValueError(
+            f"Type {text!r} not found (from {type_name!r}). Use list_structs(filter='<substring>') for "
+            f"struct types; names are case-sensitive. Pointer and array suffixes ('*', '[N]') are allowed."
+        )
+
+    dt = results[0]
+    for suffix in suffixes:
+        if suffix == "*":
+            dt = PointerDataType(dt, dtm)
+        else:
+            if suffix <= 0:
+                raise ValueError(f"Array length in {type_name!r} must be positive.")
+            dt = ArrayDataType(dt, suffix, dt.getLength(), dtm)
+    return dt

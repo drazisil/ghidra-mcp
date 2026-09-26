@@ -160,7 +160,9 @@ Every read tool also takes an optional `program`: it switches the active program
 | `set_function_comment` | Set the plate comment on a function. |
 | `create_function` | Define a new function at an address Ghidra hasn't already recognized as one (disassembles first if needed; body auto-determined by following control flow, same as the GUI's "Create Function" action). |
 | `create_struct` | Create a new empty struct data type. |
-| `apply_struct_member` | Place a field into a struct at a given byte offset. |
+| `apply_struct_member` | Place a field into a struct at a given byte offset. The type may carry pointer/array suffixes: `Foo *`, `char[16]`, `MyFuncDef *` (a function pointer). |
+| `resize_struct` | Change a struct's size, keeping its fields (e.g. grow a 1-byte `/Demangler` placeholder). Refuses to shrink over a defined field. |
+| `create_function_definition` | Create a function-signature data type from an existing function (`from_function`) or a C declaration (`signature` + optional `calling_convention`), for typing function-pointer fields such as vtable slots. |
 | `fix_vc6_call_terminators` | Fix VC6 debug build `CALL_TERMINATOR` / `__chkesp` problem across all call sites (two-pass). |
 | `extend_function_body` | Extend a single function body past a `CALL_TERMINATOR`. |
 | `redisassemble_instruction` | Clear and re-disassemble one instruction to recompute FlowType. |
