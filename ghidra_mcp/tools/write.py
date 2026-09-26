@@ -164,11 +164,15 @@ def register(mcp, get_program, get_project):
     ) -> str:
         """
         Place a field into a struct at the given byte offset.
+        type_name is a type name with optional pointer/array suffixes: 'cUserList',
+        'cUserList *', 'char[16]', 'MyFuncDef *' (a function pointer, e.g. a vtable
+        slot typed from create_function_definition).
         Clears conflicting undefined bytes first (replaceAtOffset requires undefined1).
         Example: apply_struct_member('cNPS_GameServer', 1760, 'cUserList', 'mUserList_Added')
         """
         from java.util import ArrayList
         from ghidra.program.model.data import Structure, TypedefDataType
+        from ghidra_mcp.util import resolve_data_type
 
         program = get_program()
         project = get_project()
@@ -191,15 +195,8 @@ def register(mcp, get_program, get_project):
         if not isinstance(struct_dt, Structure):
             raise ValueError(f"{struct_name!r} is a {type(struct_dt).__name__}, not a struct.")
 
-        # Resolve member type
-        type_results = ArrayList()
-        dtm.findDataTypes(type_name, type_results)
-        if type_results.isEmpty():
-            raise ValueError(
-                f"Member type {type_name!r} not found. Use list_structs(filter='<substring>') for "
-                f"struct types; names are case-sensitive."
-            )
-        member_type = type_results[0]
+        # Resolve member type ("Foo", "Foo *", "char[16]", ...)
+        member_type = resolve_data_type(dtm, type_name)
 
         member_size = member_type.getLength()
         end_offset = offset + member_size - 1
@@ -251,6 +248,138 @@ def register(mcp, get_program, get_project):
 
         project.save(program)
         return f"Created struct {name} ({size} bytes) in {category}"
+
+    @mcp.tool(structured_output=False)
+    def resize_struct(name: str, size: int) -> str:
+        """
+        Change a struct's total size in bytes, keeping its fields.
+        Growing appends undefined bytes. Shrinking is refused if a defined field
+        would be cut off; clear or move it first. Everything typed as this struct
+        (function parameters, other structs' fields) picks up the new size.
+        Example: resize_struct('GStringResourceHandler', 4) for a 1-byte placeholder.
+        """
+        from java.util import ArrayList
+        from ghidra.program.model.data import Structure, TypedefDataType
+
+        if size <= 0:
+            raise ValueError("size must be positive.")
+
+        program = get_program()
+        project = get_project()
+        dtm = program.getDataTypeManager()
+
+        results = ArrayList()
+        dtm.findDataTypes(name, results)
+        if results.isEmpty():
+            raise ValueError(
+                f"Struct {name!r} not found. Use list_structs(filter='<substring>') to find it."
+            )
+        struct_dt = results[0]
+        while isinstance(struct_dt, TypedefDataType):
+            struct_dt = struct_dt.getDataType()
+        if not isinstance(struct_dt, Structure):
+            raise ValueError(f"{name!r} is a {type(struct_dt).__name__}, not a struct.")
+
+        # An empty struct (e.g. a 1-byte /Demangler placeholder) reports length 1
+        # but holds nothing; growing it by (size - 1) would come out short.
+        empty = struct_dt.isNotYetDefined()
+        old_size = 0 if empty else struct_dt.getLength()
+        if size < old_size:
+            cut = [
+                f"{c.getFieldName() or '(unnamed)'} @ {c.getOffset()} ({c.getDataType().getName()})"
+                for c in struct_dt.getDefinedComponents()
+                if c.getOffset() + c.getLength() > size
+            ]
+            if cut:
+                raise ValueError(
+                    f"Shrinking {name} from {old_size} to {size} bytes would cut these fields: "
+                    + ", ".join(cut)
+                )
+
+        tx = dtm.startTransaction(f"resize {name} {old_size} -> {size}")
+        success = False
+        try:
+            if size != old_size:
+                struct_dt.setLength(size)
+            success = True
+        finally:
+            dtm.endTransaction(tx, success)
+
+        project.save(program)
+        before = "empty (not yet defined)" if empty else f"{old_size}"
+        return f"Resized {name}: {before} -> {struct_dt.getLength()} bytes"
+
+    @mcp.tool(structured_output=False)
+    def create_function_definition(
+        name: str,
+        from_function: str = "",
+        signature: str = "",
+        calling_convention: str = "",
+        category: str = "/",
+    ) -> str:
+        """
+        Create a function-definition data type (a function signature usable as a
+        type), so struct fields can be typed as function pointers -- e.g. vtable
+        slots: create_function_definition(...) then
+        apply_struct_member('Foo::vftable', 0x18, '<name> *', 'EnumResources').
+        Give exactly one source:
+          from_function: a function name or address; copies its return type,
+            parameters and calling convention (a __thiscall function keeps
+            __thiscall, and the decompiler passes the object as `this`).
+          signature: a C declaration without a calling-convention keyword, e.g.
+            'void EnumResources(void *cb, void *ctx)'; set calling_convention
+            separately ('__thiscall', '__stdcall', ...).
+        calling_convention also overrides the one copied from from_function.
+        The new type is named `name` (the name inside `signature` is ignored).
+        """
+        from ghidra.app.util.parser import FunctionSignatureParser
+        from ghidra.program.model.data import CategoryPath, DataTypeConflictHandler, FunctionDefinitionDataType
+        from ghidra_mcp.util import resolve_function
+
+        if bool(from_function) == bool(signature):
+            raise ValueError("Pass exactly one of from_function or signature.")
+
+        program = get_program()
+        project = get_project()
+        dtm = program.getDataTypeManager()
+
+        if from_function:
+            fn = resolve_function(program, from_function)
+            fdef = FunctionDefinitionDataType(fn.getSignature(), dtm)
+        else:
+            parser = FunctionSignatureParser(dtm, None)
+            try:
+                parsed = parser.parse(None, signature)
+            except Exception as e:
+                raise ValueError(f"Could not parse signature {signature!r}: {e}")
+            fdef = FunctionDefinitionDataType(parsed, dtm)
+
+        fdef.setNameAndCategory(CategoryPath(category), name)
+        if calling_convention:
+            valid_names = [cc.getName() for cc in program.getCompilerSpec().getCallingConventions()]
+            if calling_convention not in valid_names:
+                raise ValueError(
+                    f"Unknown calling convention {calling_convention!r}. Valid for this program: "
+                    + ", ".join(valid_names)
+                )
+            fdef.setCallingConvention(calling_convention)
+
+        existing = dtm.getDataType(CategoryPath(category), name)
+        if existing is not None:
+            raise ValueError(
+                f"A data type named {name!r} already exists in {category}. Pick another name or category."
+            )
+
+        tx = dtm.startTransaction(f"create function definition {name}")
+        success = False
+        try:
+            added = dtm.addDataType(fdef, DataTypeConflictHandler.DEFAULT_HANDLER)
+            success = True
+        finally:
+            dtm.endTransaction(tx, success)
+
+        project.save(program)
+        return f"Created function definition {added.getPathName()}: {added.getPrototypeString(True)}"
 
     @mcp.tool(structured_output=False)
     def set_calling_convention(name_or_address: str, convention: str) -> str:
