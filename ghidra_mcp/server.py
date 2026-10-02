@@ -207,12 +207,13 @@ mcp = FastMCP(
     transport_security=_mcp_transport_security,
 )
 
-from ghidra_mcp.tools import read, write, vc6_fixes, pdb_tools  # noqa: E402
+from ghidra_mcp.tools import read, write, vc6_fixes, pdb_tools, retype  # noqa: E402
 
 read.register(mcp, get_program, switch_program)
 write.register(mcp, get_program, get_project)
 vc6_fixes.register(mcp, get_program, get_project)
 pdb_tools.register(mcp, get_program, get_project)
+retype.register(mcp, get_program, get_project)
 
 
 @mcp.tool(structured_output=False)

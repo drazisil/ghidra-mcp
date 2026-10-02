@@ -164,5 +164,6 @@ Every read tool also takes an optional `program`: it switches the active program
 | `fix_vc6_call_terminators` | Fix VC6 debug build `CALL_TERMINATOR` / `__chkesp` problem across all call sites (two-pass). |
 | `extend_function_body` | Extend a single function body past a `CALL_TERMINATOR`. |
 | `redisassemble_instruction` | Clear and re-disassemble one instruction to recompute FlowType. |
+| `retype_this_aliases` | In `__thiscall` functions, retype locals that only hold a copy of `this` (`local_8 = (GUI *)this;`) to the type of `this`, so the base-class cast stops showing on the assignment. One function, or all of them (bounded by `start`/`end`); `dry_run` lists changes without writing. Skips functions whose `this` isn't a struct pointer yet. |
 
 Addresses are 32-bit hex strings: `'0055e190'`, not `0x0055e190`.

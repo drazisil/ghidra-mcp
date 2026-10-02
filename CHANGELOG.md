@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.0
+
+- Added `retype_this_aliases(name_or_address="", start="", end="", dry_run=False, max_passes=3, timeout=60, limit=100)`: in `__thiscall` functions, retypes every local that only ever holds a copy of `this` to the type of `this`. Derived-class methods typically open with `local_8 = (GUI *)this; GUI::OnBegin((GUI *)this);`; the decompiler types the local from the first callee it is passed to (the base class), so a plain copy of `this` is rendered as a cast. After this, the cast shows only where it is real, at the base-class call. Works on the decompiler's high p-code (COPY/CAST chains back to the `this` parameter) rather than on the C text, and writes the type as user-defined so it is not re-inferred. Guards: a local is retyped only if *every* definition of it is a plain copy of `this` (a stack slot the compiler reuses for something else is left alone), and only in functions whose `this` is already a struct/class pointer (an `undefined4`/`void *` `this` is counted as `skipped_untyped_this`). Functions are re-decompiled and re-checked up to `max_passes` times. `dry_run=True` lists what would change without writing. With no function given it scans every `__thiscall` function, optionally bounded by `start`/`end`. Lives in `ghidra_mcp/tools/retype.py`. Tests in `tests/test_retype.py`; not yet exercised against a real C++ binary.
+
 ## 0.3.0
 
 Output budgets, from an audit of 3,344 real tool calls across 34 sessions: decompiles were 53% of all tool-output text (p99 38k chars), and a result stays in the conversation, re-read on every later turn, until it's compacted.
